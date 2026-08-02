@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}FairShare - Club Member Reward & Profit Sharing System{% endblock %}
+
+{% block content %}
+<div style="max-width: 840px; margin: 4rem auto; text-align: center;">
+  <span class="badge badge-emerald" style="margin-bottom: 1.25rem;">Transparent Profit Sharing</span>
+  <h1 style="font-size: 3.5rem; line-height: 1.15; margin-bottom: 1.5rem;">
+    Rewarding active club members automatically.
+  </h1>
+  <p style="color: var(--text-muted); font-size: 1.2rem; margin-bottom: 2.5rem; line-height: 1.7;">
+    Say goodbye to blanket subscription fees. FairShare dynamically computes member engagement scores based on visits, restaurant spending, facility usage, and guest referrals to deliver personalized discounts and cashback.
+  </p>
+
+  <div style="display: flex; justify-content: center; gap: 1.25rem; flex-wrap: wrap;">
+    {% if session.user_id %}
+      {% if session.role == 'admin' %}
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-primary" style="padding: 0.85rem 2rem; font-size: 1.05rem;">Go to Admin Control Panel &rarr;</a>
+      {% else %}
+        <a href="{{ url_for('member_dashboard') }}" class="btn btn-emerald" style="padding: 0.85rem 2rem; font-size: 1.05rem;">Open Member Dashboard &rarr;</a>
+      {% endif %}
+    {% else %}
+      <a href="{{ url_for('login') }}" class="btn btn-primary" style="padding: 0.85rem 2.25rem; font-size: 1.05rem;">Member & Admin Login &rarr;</a>
+      <a href="{{ url_for('guest_portal') }}" class="btn btn-secondary" style="padding: 0.85rem 2rem; font-size: 1.05rem;">Guest Check-In Portal &rarr;</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

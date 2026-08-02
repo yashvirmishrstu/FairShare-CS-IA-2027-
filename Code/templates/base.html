@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}FairShare - Personalized Club Rewards & Profit Sharing{% endblock %}</title>
+  
+  <!-- CSS Styles -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  
+  <!-- Fast JS Libraries from CDN for Barcode, QR Code, and Analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- Navigation Bar -->
+  <nav class="navbar">
+    <div class="navbar-container">
+      <a href="{% if current_user %}{% if current_user.role == 'admin' %}{{ url_for('admin_dashboard') }}{% else %}{{ url_for('member_dashboard') }}{% endif %}{% else %}{{ url_for('index') }}{% endif %}" class="brand-logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+        FairShare
+        <span class="brand-badge">Club Portal</span>
+      </a>
+
+      <ul class="nav-links">
+        {% if current_user %}
+          {% if current_user.role == 'admin' %}
+            <li><a href="{{ url_for('admin_dashboard') }}" class="nav-link">Admin Dashboard</a></li>
+            <li><a href="{{ url_for('admin_members') }}" class="nav-link">Members</a></li>
+            <li><a href="{{ url_for('admin_activity') }}" class="nav-link">Activity Log</a></li>
+            <li><a href="{{ url_for('admin_settings') }}" class="nav-link">Algorithm Settings</a></li>
+            <li><a href="{{ url_for('admin_reports') }}" class="nav-link">CSV Reports</a></li>
+          {% else %}
+            <li><a href="{{ url_for('member_dashboard') }}" class="nav-link">Dashboard</a></li>
+            <li><a href="{{ url_for('member_activity') }}" class="nav-link">Activity & Check-In</a></li>
+            <li><a href="{{ url_for('member_rewards') }}" class="nav-link">My Rewards</a></li>
+          {% endif %}
+          <li><a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm">Log Out ({{ current_user.username }})</a></li>
+        {% else %}
+          <li><a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Log In</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Main Content Shell -->
+  <main class="main-content">
+    <!-- Flash Notifications Container -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="alert-container">
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">
+              <span>{{ message }}</span>
+              <button onclick="this.parentElement.remove()" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:bold;">&times;</button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <p>&copy; 2026 FairShare - Personalised Member Reward & Profit Sharing Platform. All rights reserved.</p>
+  </footer>
+
+  <!-- App Interactive JavaScript -->
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

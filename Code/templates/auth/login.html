@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Log In - FairShare System{% endblock %}
+
+{% block content %}
+<div style="max-width: 440px; margin: 3rem auto;">
+  <div class="card" style="padding: 2.25rem;">
+    <div style="text-align: center; margin-bottom: 1.75rem;">
+      <h2 style="font-size: 1.8rem; margin-bottom: 0.25rem;">Welcome Back</h2>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">Sign in to your FairShare Member or Admin Account</p>
+    </div>
+
+    <form action="{{ url_for('login') }}" method="POST">
+      <div class="form-group">
+        <label class="form-label">Username</label>
+        <input type="text" name="username" class="form-control" placeholder="Enter username (e.g. alice / admin)" required autofocus>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="password" name="password" class="form-control" placeholder="Enter password" required>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; padding: 0.8rem;">
+        Sign In &rarr;
+      </button>
+    </form>
+
+    <div style="margin-top: 1.5rem; text-align: center; border-top: 1px solid var(--border-glass); padding-top: 1.25rem;">
+      <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Member accounts are provisioned exclusively by club managers.
+      </p>
+      <div style="margin-top: 1rem; background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: var(--radius-sm); font-size: 0.8rem; color: var(--text-muted);">
+        <strong>Demo Accounts:</strong><br>
+        Member: <code>alice</code> / <code>password123</code><br>
+        Admin: <code>admin</code> / <code>admin123</code>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

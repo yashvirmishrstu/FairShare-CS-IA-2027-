@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Members - FairShare Admin{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+  <h1>Member Directory & Record Management</h1>
+  <p style="color: var(--text-muted);">View, add, and edit member records and reward statuses.</p>
+</div>
+
+<div class="grid grid-cols-3" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Add New Member Form Card -->
+  <div class="card" style="grid-column: span 1;">
+    <h3>Register New Member</h3>
+    <form action="{{ url_for('admin_members') }}" method="POST" style="margin-top: 1rem;">
+      <div class="form-group">
+        <label class="form-label">Full Name *</label>
+        <input type="text" name="full_name" class="form-control" placeholder="John Doe" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Username *</label>
+        <input type="text" name="username" class="form-control" placeholder="johndoe" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input type="email" name="email" class="form-control" placeholder="john@example.com" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input type="text" name="phone" class="form-control" placeholder="555-0100">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Membership Tier</label>
+        <select name="membership_type" class="form-control">
+          <option value="Standard">Standard Tier</option>
+          <option value="VIP Gold">VIP Gold Tier</option>
+          <option value="Platinum">Platinum Tier</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Initial Password *</label>
+        <input type="password" name="password" class="form-control" required>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Create Member Record</button>
+    </form>
+  </div>
+
+  <!-- Member Directory Table Card -->
+  <div class="card" style="grid-column: span 2;">
+    <h3>Member Database Records</h3>
+    <div class="table-container" style="margin-top: 1rem;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Member Details</th>
+            <th>Tier</th>
+            <th>Score</th>
+            <th>Discount</th>
+            <th>Earned Share</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in member_data %}
+            {% set m = item.profile %}
+            {% set r = item.rewards %}
+            <tr>
+              <td><code>{{ m.member_code }}</code></td>
+              <td>
+                <strong>{{ m.full_name }}</strong><br>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">{{ m.email }}</span>
+              </td>
+              <td><span class="badge badge-purple">{{ m.membership_type }}</span></td>
+              <td><strong>{{ "%.1f"|format(r.engagement_score) }}</strong></td>
+              <td><span class="badge badge-emerald">{{ "%.0f"|format(r.discount_percentage) }}%</span></td>
+              <td>${{ "%.2f"|format(r.earned_profit_share) }}</td>
+              <td>
+                <details style="cursor: pointer;">
+                  <summary class="btn btn-secondary btn-sm">Edit</summary>
+                  <form action="{{ url_for('admin_member_edit', member_id=m.id) }}" method="POST" style="margin-top: 0.5rem; background: rgba(11,15,25,0.9); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-glass);">
+                    <input type="text" name="full_name" value="{{ m.full_name }}" class="form-control" style="margin-bottom: 0.4rem;" required>
+                    <input type="email" name="email" value="{{ m.email }}" class="form-control" style="margin-bottom: 0.4rem;" required>
+                    <input type="text" name="phone" value="{{ m.phone or '' }}" class="form-control" style="margin-bottom: 0.4rem;">
+                    <select name="membership_type" class="form-control" style="margin-bottom: 0.4rem;">
+                      <option value="Standard" {% if m.membership_type=='Standard' %}selected{% endif %}>Standard Tier</option>
+                      <option value="VIP Gold" {% if m.membership_type=='VIP Gold' %}selected{% endif %}>VIP Gold Tier</option>
+                      <option value="Platinum" {% if m.membership_type=='Platinum' %}selected{% endif %}>Platinum Tier</option>
+                    </select>
+                    <button type="submit" class="btn btn-emerald btn-sm" style="width: 100%;">Save Changes</button>
+                  </form>
+                </details>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" style="text-align:center; color: var(--text-dim);">No members in database.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

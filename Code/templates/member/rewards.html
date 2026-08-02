@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}My Rewards & QR Voucher - FairShare{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+  <h1>Personalised Member Rewards & Profit Sharing</h1>
+  <p style="color: var(--text-muted);">Your dynamic discount rates and earned profit sharing are updated in real time based on your aggregate engagement score.</p>
+</div>
+
+<div class="grid grid-cols-2" style="gap: 2rem; margin-bottom: 2rem;">
+  <!-- Reward Overview Card -->
+  <div class="card">
+    <span class="badge badge-emerald" style="margin-bottom: 0.5rem;">Active Reward Voucher</span>
+    <h2 style="font-size: 2rem; margin-bottom: 0.25rem;">{{ "%.0f"|format(rewards.discount_percentage) }}% Discount Tier</h2>
+    <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">Engagement Score: <strong>{{ "%.1f"|format(rewards.engagement_score) }} points</strong></p>
+
+    <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-glass); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.5rem;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+        <span style="color: var(--text-muted);">Earned Profit Share:</span>
+        <strong style="color: #6ee7b7; font-size: 1.1rem;">${{ "%.2f"|format(rewards.earned_profit_share) }}</strong>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">Redemption Voucher Code:</span>
+        <code style="color: var(--accent-cyan); font-weight: 700;">{{ rewards.redemption_code }}</code>
+      </div>
+    </div>
+
+    <form action="{{ url_for('member_rewards') }}" method="POST">
+      <button type="submit" class="btn btn-emerald" style="width: 100%;">
+        Generate / Verify New Redemption QR Code
+      </button>
+    </form>
+  </div>
+
+  <!-- Redemption QR Code Mobile Display Container -->
+  <div class="card" style="text-align: center;">
+    <h3>Mobile Redemption QR Code</h3>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Scan this QR code at checkout to apply your {{ "%.0f"|format(rewards.discount_percentage) }}% discount during transactions.</p>
+    
+    <div style="background: #ffffff; padding: 1.5rem; border-radius: var(--radius-sm); display: inline-block; margin-top: 1rem;">
+      <div id="redemption-qr" data-qr="{{ rewards.redemption_code }}"></div>
+      <div style="margin-top: 0.5rem; color: #111827; font-family: monospace; font-weight: bold; font-size: 0.9rem;">
+        {{ rewards.redemption_code }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Dynamic Discount Tier Scale Card -->
+<div class="card">
+  <h3>Dynamic Engagement & Discount Scale</h3>
+  <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">Higher engagement unlocks higher rewards without administrator intervention.</p>
+  
+  <div class="grid grid-cols-4" style="gap: 1rem;">
+    <div style="background: rgba(255,255,255,0.04); padding: 1rem; border-radius: var(--radius-sm); border-left: 3px solid var(--text-dim);">
+      <strong style="color: var(--text-muted);">0 - 49 Points</strong>
+      <h4 style="font-size: 1.3rem;">0% Discount</h4>
+      <span style="font-size: 0.8rem; color: var(--text-dim);">Standard Entry Tier</span>
+    </div>
+
+    <div style="background: rgba(255,255,255,0.04); padding: 1rem; border-radius: var(--radius-sm); border-left: 3px solid var(--primary);">
+      <strong style="color: var(--primary);">50 - 99 Points</strong>
+      <h4 style="font-size: 1.3rem;">5% Discount</h4>
+      <span style="font-size: 0.8rem; color: var(--text-dim);">Bronze Loyalty Tier</span>
+    </div>
+
+    <div style="background: rgba(255,255,255,0.04); padding: 1rem; border-radius: var(--radius-sm); border-left: 3px solid var(--accent-purple);">
+      <strong style="color: var(--accent-purple);">100 - 199 Points</strong>
+      <h4 style="font-size: 1.3rem;">10% Discount</h4>
+      <span style="font-size: 0.8rem; color: var(--text-dim);">Silver Loyalty Tier</span>
+    </div>
+
+    <div style="background: rgba(255,255,255,0.04); padding: 1rem; border-radius: var(--radius-sm); border-left: 3px solid var(--accent-emerald);">
+      <strong style="color: var(--accent-emerald);">200+ Points</strong>
+      <h4 style="font-size: 1.3rem;">15% - 20% Discount</h4>
+      <span style="font-size: 0.8rem; color: var(--text-dim);">Gold & Platinum Tier</span>
+    </div>
+  </div>
+</div>
+{% endblock %}

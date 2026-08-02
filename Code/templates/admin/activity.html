@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}System Activity Ledger - FairShare Admin{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+  <h1>Master System Activity Ledger</h1>
+  <p style="color: var(--text-muted);">View all member activity entries or manually log visits/purchases on behalf of members.</p>
+</div>
+
+<div class="grid grid-cols-3" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Admin Manual Activity Logger Card -->
+  <div class="card" style="grid-column: span 1;">
+    <h3>Log Member Activity</h3>
+    <form action="{{ url_for('admin_activity') }}" method="POST" style="margin-top: 1rem;">
+      <div class="form-group">
+        <label class="form-label">Select Member</label>
+        <select name="member_id" class="form-control" required>
+          {% for m in all_members %}
+            <option value="{{ m.id }}">{{ m.full_name }} ({{ m.member_code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Activity Type</label>
+        <select name="activity_type" class="form-control">
+          <option value="visit">Facility Visit</option>
+          <option value="purchase">Restaurant / Pro Shop Spending</option>
+          <option value="referral">Guest Referral</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Service Description</label>
+        <input type="text" name="service_name" class="form-control" placeholder="e.g. Fine Dining Dinner" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Transaction Amount ($)</label>
+        <input type="number" step="0.01" min="0" name="transaction_value" class="form-control" placeholder="0.00" data-non-negative required>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Post Activity Entry</button>
+    </form>
+  </div>
+
+  <!-- Master Activity Logs Table Card -->
+  <div class="card" style="grid-column: span 2;">
+    <h3>All Member Activity Logs</h3>
+    <div class="table-container" style="margin-top: 1rem;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Member</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Value ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for act in activities %}
+            <tr>
+              <td>{{ act.created_at }}</td>
+              <td><strong>{{ act.full_name }}</strong><br><code style="font-size: 0.75rem;">{{ act.member_code }}</code></td>
+              <td>
+                {% if act.activity_type == 'visit' %}
+                  <span class="badge badge-blue">Visit</span>
+                {% elif act.activity_type == 'purchase' %}
+                  <span class="badge badge-emerald">Purchase</span>
+                {% elif act.activity_type == 'referral' %}
+                  <span class="badge badge-amber">Referral</span>
+                {% else %}
+                  <span class="badge badge-purple">Facility</span>
+                {% endif %}
+              </td>
+              <td>{{ act.service_name }}</td>
+              <td>${{ "%.2f"|format(act.transaction_value) }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" style="text-align:center; color: var(--text-dim);">No activities recorded in ledger.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

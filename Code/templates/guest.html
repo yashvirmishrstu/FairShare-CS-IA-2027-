@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Guest Portal & Express Check-In - FairShare{% endblock %}
+
+{% block content %}
+<div style="max-width: 580px; margin: 2rem auto;">
+  <div class="card" style="border: 1px solid rgba(16, 185, 129, 0.3); padding: 2.25rem;">
+    <div style="text-align: center; margin-bottom: 1.75rem;">
+      <span class="badge badge-purple" style="margin-bottom: 0.5rem;">Guest Services</span>
+      <h2 style="font-size: 1.8rem; margin-bottom: 0.25rem;">Quick Guest Check-In & Purchase</h2>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">
+        Are you visiting with a member? Record purchases using your unique Guest Pass ID to credit rewards to your host!
+      </p>
+    </div>
+
+    <form action="{{ url_for('guest_spending') }}" method="POST">
+      <div class="form-group">
+        <label class="form-label">Guest Pass Code *</label>
+        <input type="text" name="guest_code" class="form-control" placeholder="e.g. GST-1A2B3C" required style="text-transform: uppercase;">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Facility Service Used *</label>
+        <input type="text" name="service_name" class="form-control" placeholder="e.g. Pro Shop / Restaurant Dining" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Transaction Amount ($) *</label>
+        <input type="number" step="0.01" min="0" name="amount" class="form-control" placeholder="0.00" data-non-negative required>
+      </div>
+
+      <button type="submit" class="btn btn-emerald" style="width: 100%; padding: 0.8rem; margin-top: 0.5rem;">
+        Record Guest Purchase &rarr;
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

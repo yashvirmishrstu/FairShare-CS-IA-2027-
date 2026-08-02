@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}Member Dashboard - {{ member.full_name }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem;">
+  <div>
+    <span class="badge badge-blue" style="margin-bottom: 0.5rem;">{{ member.membership_type }} Member</span>
+    <h1 style="font-size: 2.2rem;">Welcome back, {{ member.full_name }}!</h1>
+    <p style="color: var(--text-muted); font-size: 0.95rem;">Member Code: <code style="color: var(--accent-cyan);">{{ member.member_code }}</code> | Joined: {{ member.join_date[:10] }}</p>
+  </div>
+  <a href="{{ url_for('member_activity') }}" class="btn btn-primary">+ Log Activity / Check In</a>
+</div>
+
+<!-- Stat Cards -->
+<div class="grid grid-cols-4" style="margin-bottom: 2rem;">
+  <div class="card stat-card purple">
+    <span class="stat-label">Engagement Score</span>
+    <span class="stat-value">{{ "%.1f"|format(rewards.engagement_score) }}</span>
+    <span class="stat-desc">Calculated from visits & spending</span>
+  </div>
+
+  <div class="card stat-card emerald">
+    <span class="stat-label">Personalised Discount</span>
+    <span class="stat-value">{{ "%.0f"|format(rewards.discount_percentage) }}%</span>
+    <span class="stat-desc">Applied automatically to purchases</span>
+  </div>
+
+  <div class="card stat-card amber">
+    <span class="stat-label">Earned Profit Share</span>
+    <span class="stat-value">${{ "%.2f"|format(rewards.earned_profit_share) }}</span>
+    <span class="stat-desc">Your share of current pool</span>
+  </div>
+
+  <div class="card stat-card">
+    <span class="stat-label">Total Value Generated</span>
+    <span class="stat-value">${{ "%.2f"|format(rewards.details.total_spending) }}</span>
+    <span class="stat-desc">${{ "%.2f"|format(rewards.details.direct_spending) }} direct + ${{ "%.2f"|format(rewards.details.guest_spending) }} guests</span>
+  </div>
+</div>
+
+<div class="grid grid-cols-3" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Member ID Barcode Scan-In Card -->
+  <div class="card" style="text-align: center;">
+    <h3>Facility Digital Scan ID</h3>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Present at entrance turnstiles or facility counters</p>
+    <div class="code-box">
+      <svg id="member-barcode" data-code="{{ member.member_code }}"></svg>
+    </div>
+  </div>
+
+  <!-- Facility Check-In Status & Action -->
+  <div class="card">
+    <h3>Facility Check-In</h3>
+    {% if active_checkin %}
+      <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); padding: 1rem; border-radius: var(--radius-sm); margin-top: 1rem;">
+        <p style="font-weight: 700; color: #6ee7b7; font-size: 0.95rem;">Checked In: {{ active_checkin.facility_name }}</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">Started at: {{ active_checkin.check_in_time[11:16] }}</p>
+        <form action="{{ url_for('member_checkout', checkin_id=active_checkin.id) }}" method="POST" style="margin-top: 0.85rem;">
+          <button type="submit" class="btn btn-emerald btn-sm" style="width: 100%;">Check Out & Calculate Duration</button>
+        </form>
+      </div>
+    {% else %}
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.5rem; margin-bottom: 1rem;">Select a facility to check in and record duration:</p>
+      <form action="{{ url_for('member_checkin') }}" method="POST">
+        <div class="form-group">
+          <select name="facility_name" class="form-control">
+            <option value="Club Fitness & Gym">Club Fitness & Gym</option>
+            <option value="Tennis & Squash Courts">Tennis & Squash Courts</option>
+            <option value="Swimming Pool & Spa">Swimming Pool & Spa</option>
+            <option value="Bistro & Lounge">Bistro & Lounge</option>
+            <option value="Pro Golf Course">Pro Golf Course</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm" style="width: 100%;">Check In Now</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <!-- Guest Pass Creation Card -->
+  <div class="card">
+    <h3>Create Guest Pass</h3>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 0.85rem;">Generate Guest ID code to earn referral points!</p>
+    <form action="{{ url_for('member_guest_create') }}" method="POST">
+      <div class="form-group">
+        <input type="text" name="guest_name" class="form-control" placeholder="Guest Full Name" required style="font-size: 0.9rem; padding: 0.55rem;">
+      </div>
+      <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%;">Generate Guest Pass</button>
+    </form>
+
+    {% if guests %}
+      <div style="margin-top: 1rem; max-height: 90px; overflow-y: auto; font-size: 0.8rem;">
+        <span style="color: var(--text-dim); font-weight: 600;">Active Guest Passes:</span>
+        {% for g in guests[:3] %}
+          <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-glass); padding: 0.2rem 0;">
+            <span>{{ g.guest_name }}</span>
+            <code style="color: var(--accent-amber);">{{ g.guest_code }}</code>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Recent Activity History Table -->
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <h3>Recent Activity History</h3>
+    <a href="{{ url_for('member_activity') }}" style="font-size: 0.9rem;">View All &rarr;</a>
+  </div>
+
+  <div class="table-container">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Value ($)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for act in recent_activities %}
+          <tr>
+            <td>{{ act.created_at[:10] }}</td>
+            <td>
+              {% if act.activity_type == 'visit' %}
+                <span class="badge badge-blue">Visit</span>
+              {% elif act.activity_type == 'purchase' %}
+                <span class="badge badge-emerald">Purchase</span>
+              {% elif act.activity_type == 'referral' %}
+                <span class="badge badge-amber">Referral</span>
+              {% else %}
+                <span class="badge badge-purple">Facility</span>
+              {% endif %}
+            </td>
+            <td>{{ act.service_name }}</td>
+            <td>${{ "%.2f"|format(act.transaction_value) }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-muted);">No activity logged yet.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,514 @@
+import functools
+import uuid
+from flask import Flask, render_template, request, redirect, url_for, flash, session, Response, jsonify
+from werkzeug.security import generate_password_hash, check_password_hash
+
+from config import Config
+from database import get_db, init_db
+from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManager, CSVReportGenerator
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+# Ensure database tables exist on launch
+init_db()
+
+# HTTP Cache Control Header for Asset Optimization & Fast Load Times (<2-3s)
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'public, max-age=3600'
+    return response
+
+# Authorization Decorators
+def login_required(f):
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please log in to access this page.', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session or session.get('role') != 'admin':
+            flash('Unauthorized access! Administrator privileges required.', 'danger')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Context Processor for Navigation Badges & User Info
+@app.context_processor
+def inject_user():
+    user = None
+    member = None
+    if 'user_id' in session:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, username, role FROM users WHERE id = ?", (session['user_id'],))
+        user = cursor.fetchone()
+        if user and user['role'] == 'member':
+            cursor.execute("SELECT * FROM members WHERE user_id = ?", (user['id'],))
+            member = cursor.fetchone()
+        conn.close()
+    return dict(current_user=user, current_member=member)
+
+# Public Routes
+@app.route('/')
+def index():
+    if 'user_id' in session:
+        if session.get('role') == 'admin':
+            return redirect(url_for('admin_dashboard'))
+        else:
+            return redirect(url_for('member_dashboard'))
+    return render_template('index.html')
+
+@app.route('/guest')
+def guest_portal():
+    return render_template('guest.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        # Server-side Validation
+        if not username or not password:
+            flash('Username and password are required fields.', 'danger')
+            return render_template('auth/login.html')
+
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+        user = cursor.fetchone()
+        conn.close()
+
+        if user and check_password_hash(user['password_hash'], password):
+            session.clear()
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['role'] = user['role']
+
+            flash(f'Welcome back, {user["username"]}!', 'success')
+            if user['role'] == 'admin':
+                return redirect(url_for('admin_dashboard'))
+            else:
+                return redirect(url_for('member_dashboard'))
+
+        flash('Invalid username or password credentials.', 'danger')
+
+    return render_template('auth/login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    flash('Public self-registration is disabled. Member accounts must be created by a club administrator.', 'info')
+    return redirect(url_for('login'))
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
+
+
+# Member Routes
+@app.route('/member/dashboard')
+@login_required
+def member_dashboard():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+
+    if not member:
+        conn.close()
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
+    # Calculate current reward details
+    rewards = EngagementEngine.update_member_rewards(member['id'])
+
+    # Recent activities
+    cursor.execute('''
+        SELECT activity_type, service_name, transaction_value, guest_count, created_at
+        FROM activities WHERE member_id = ? ORDER BY created_at DESC LIMIT 5
+    ''', (member['id'],))
+    recent_activities = cursor.fetchall()
+
+    # Active facility checkins
+    cursor.execute('''
+        SELECT * FROM facility_checkins WHERE member_id = ? AND status = 'active'
+    ''', (member['id'],))
+    active_checkin = cursor.fetchone()
+
+    # Hosted guest IDs
+    cursor.execute("SELECT * FROM guest_ids WHERE host_member_id = ? ORDER BY created_at DESC", (member['id'],))
+    guests = cursor.fetchall()
+
+    conn.close()
+
+    return render_template('member/dashboard.html', member=member, rewards=rewards,
+                           recent_activities=recent_activities, active_checkin=active_checkin, guests=guests)
+
+@app.route('/member/activity', methods=['GET', 'POST'])
+@login_required
+def member_activity():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+
+    if request.method == 'POST':
+        activity_type = request.form.get('activity_type')
+        service_name = request.form.get('service_name', '').strip()
+        try:
+            transaction_value = float(request.form.get('transaction_value', 0.0))
+        except ValueError:
+            transaction_value = -1.0
+
+        # Server-side Validation
+        if transaction_value < 0:
+            flash('Transaction value cannot be negative!', 'danger')
+            conn.close()
+            return redirect(url_for('member_activity'))
+
+        if not service_name:
+            flash('Service description is required.', 'danger')
+            conn.close()
+            return redirect(url_for('member_activity'))
+
+        cursor.execute('''
+            INSERT INTO activities (member_id, activity_type, service_name, transaction_value)
+            VALUES (?, ?, ?, ?)
+        ''', (member['id'], activity_type, service_name, transaction_value))
+
+        conn.commit()
+        # Recalculate rewards automatically
+        EngagementEngine.update_member_rewards(member['id'])
+        flash('Activity logged successfully!', 'success')
+        conn.close()
+        return redirect(url_for('member_activity'))
+
+    # Retrieve all member activities
+    cursor.execute('''
+        SELECT * FROM activities WHERE member_id = ? ORDER BY created_at DESC
+    ''', (member['id'],))
+    activities = cursor.fetchall()
+
+    # Retrieve member facility checkin logs
+    cursor.execute('''
+        SELECT * FROM facility_checkins WHERE member_id = ? ORDER BY check_in_time DESC
+    ''', (member['id'],))
+    checkins = cursor.fetchall()
+
+    conn.close()
+
+    return render_template('member/activity.html', activities=activities, checkins=checkins)
+
+@app.route('/member/checkin', methods=['POST'])
+@login_required
+def member_checkin():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+
+    facility_name = request.form.get('facility_name', 'General Club House')
+    FacilityTracker.check_in(member['id'], facility_name)
+    flash(f'Checked in to {facility_name}!', 'success')
+    conn.close()
+    return redirect(url_for('member_dashboard'))
+
+@app.route('/member/checkout/<int:checkin_id>', methods=['POST'])
+@login_required
+def member_checkout(checkin_id):
+    duration = FacilityTracker.check_out(checkin_id)
+    if duration:
+        flash(f'Checked out! Duration logged: {duration} minutes.', 'info')
+    else:
+        flash('Invalid check-out request.', 'danger')
+    return redirect(url_for('member_dashboard'))
+
+@app.route('/member/guest/create', methods=['POST'])
+@login_required
+def member_guest_create():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+
+    guest_name = request.form.get('guest_name', '').strip()
+    if not guest_name:
+        flash('Guest name is required.', 'danger')
+        conn.close()
+        return redirect(url_for('member_dashboard'))
+
+    result = GuestManager.create_guest_id(member['id'], guest_name)
+    EngagementEngine.update_member_rewards(member['id'])
+    flash(f'Guest ID Created! Pass Code: {result["guest_code"]}', 'success')
+    conn.close()
+    return redirect(url_for('member_dashboard'))
+
+@app.route('/guest/spending', methods=['POST'])
+def guest_spending():
+    guest_code = request.form.get('guest_code', '').strip().upper()
+    service_name = request.form.get('service_name', '').strip()
+    try:
+        amount = float(request.form.get('amount', 0.0))
+    except ValueError:
+        amount = -1.0
+
+    if amount < 0:
+        flash('Transaction amount cannot be negative.', 'danger')
+        return redirect(url_for('index'))
+
+    success = GuestManager.record_guest_spending(guest_code, service_name, amount)
+    if success:
+        flash(f'Guest purchase of ${amount:.2f} recorded for Pass {guest_code}!', 'success')
+    else:
+        flash('Invalid Guest Code entered.', 'danger')
+
+    return redirect(url_for('index'))
+
+@app.route('/member/rewards', methods=['GET', 'POST'])
+@login_required
+def member_rewards():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+
+    rewards = EngagementEngine.update_member_rewards(member['id'])
+
+    if request.method == 'POST':
+        # Redeem reward action
+        cursor.execute("UPDATE rewards SET status = 'redeemed' WHERE member_id = ? AND status = 'active'", (member['id'],))
+        conn.commit()
+        # Generate new reward voucher
+        rewards = EngagementEngine.update_member_rewards(member['id'])
+        flash('Voucher code generated & verified!', 'success')
+
+    conn.close()
+    return render_template('member/rewards.html', rewards=rewards)
+
+
+# Admin Routes
+@app.route('/admin/dashboard')
+@admin_required
+def admin_dashboard():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) FROM members")
+    total_members = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM activities")
+    total_activities = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COALESCE(SUM(transaction_value), 0.0) FROM activities")
+    total_spending = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COALESCE(SUM(duration_minutes), 0) FROM facility_checkins WHERE status = 'completed'")
+    total_facility_mins = cursor.fetchone()[0]
+
+    settings = RewardSettings.get_settings()
+    conn.close()
+
+    return render_template('admin/dashboard.html', total_members=total_members,
+                           total_activities=total_activities, total_spending=total_spending,
+                           total_facility_mins=total_facility_mins, settings=settings)
+
+@app.route('/admin/api/analytics')
+@admin_required
+def admin_analytics_api():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Facility usage trends by type
+    cursor.execute('''
+        SELECT facility_name, COUNT(*) as usage_count, SUM(duration_minutes) as total_duration
+        FROM facility_checkins GROUP BY facility_name
+    ''')
+    facility_trends = [dict(row) for row in cursor.fetchall()]
+
+    # Total rewards distributed breakdown
+    cursor.execute("SELECT discount_percentage, COUNT(*) as count FROM rewards GROUP BY discount_percentage")
+    reward_distribution = [dict(row) for row in cursor.fetchall()]
+
+    # Activity hourly peak distribution
+    cursor.execute("SELECT strftime('%H', created_at) as hour, COUNT(*) as count FROM activities GROUP BY hour")
+    peak_hours = [dict(row) for row in cursor.fetchall()]
+
+    conn.close()
+    return jsonify({
+        'facility_trends': facility_trends,
+        'reward_distribution': reward_distribution,
+        'peak_hours': peak_hours
+    })
+
+@app.route('/admin/members', methods=['GET', 'POST'])
+@admin_required
+def admin_members():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    if request.method == 'POST':
+        # Add new member from admin panel
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        full_name = request.form.get('full_name', '').strip()
+        email = request.form.get('email', '').strip()
+        phone = request.form.get('phone', '').strip()
+        membership_type = request.form.get('membership_type', 'Standard')
+
+        if not username or not password or not full_name or not email:
+            flash('Required fields missing for member creation.', 'danger')
+        else:
+            cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+            if cursor.fetchone():
+                flash('Username already exists.', 'danger')
+            else:
+                pw_hash = generate_password_hash(password)
+                cursor.execute("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'member')", (username, pw_hash))
+                u_id = cursor.lastrowid
+                m_code = f"MBR-{uuid.uuid4().hex[:6].upper()}"
+                cursor.execute('''
+                    INSERT INTO members (user_id, full_name, membership_type, email, phone, member_code)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (u_id, full_name, membership_type, email, phone, m_code))
+                conn.commit()
+                flash(f'Member {full_name} added successfully!', 'success')
+
+    cursor.execute('''
+        SELECT m.*, u.username, u.created_at as account_created
+        FROM members m JOIN users u ON m.user_id = u.id
+        ORDER BY m.id DESC
+    ''')
+    members_list = cursor.fetchall()
+    
+    # Calculate rewards for all members
+    member_data = []
+    for m in members_list:
+        rewards = EngagementEngine.update_member_rewards(m['id'])
+        member_data.append({'profile': m, 'rewards': rewards})
+
+    conn.close()
+    return render_template('admin/members.html', member_data=member_data)
+
+@app.route('/admin/members/edit/<int:member_id>', methods=['POST'])
+@admin_required
+def admin_member_edit(member_id):
+    full_name = request.form.get('full_name', '').strip()
+    email = request.form.get('email', '').strip()
+    phone = request.form.get('phone', '').strip()
+    membership_type = request.form.get('membership_type', 'Standard')
+
+    if not full_name or not email:
+        flash('Full name and email are required.', 'danger')
+        return redirect(url_for('admin_members'))
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE members
+        SET full_name = ?, email = ?, phone = ?, membership_type = ?
+        WHERE id = ?
+    ''', (full_name, email, phone, membership_type, member_id))
+    conn.commit()
+    conn.close()
+
+    flash('Member record updated!', 'success')
+    return redirect(url_for('admin_members'))
+
+@app.route('/admin/activity', methods=['GET', 'POST'])
+@admin_required
+def admin_activity():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    if request.method == 'POST':
+        member_id = request.form.get('member_id')
+        activity_type = request.form.get('activity_type')
+        service_name = request.form.get('service_name', '').strip()
+        try:
+            transaction_value = float(request.form.get('transaction_value', 0.0))
+        except ValueError:
+            transaction_value = -1.0
+
+        if transaction_value < 0:
+            flash('Transaction value cannot be negative!', 'danger')
+        else:
+            cursor.execute('''
+                INSERT INTO activities (member_id, activity_type, service_name, transaction_value)
+                VALUES (?, ?, ?, ?)
+            ''', (member_id, activity_type, service_name, transaction_value))
+            conn.commit()
+            EngagementEngine.update_member_rewards(member_id)
+            flash('Admin entry logged successfully!', 'success')
+
+    cursor.execute('''
+        SELECT a.*, m.full_name, m.member_code
+        FROM activities a JOIN members m ON a.member_id = m.id
+        ORDER BY a.created_at DESC
+    ''')
+    activities = cursor.fetchall()
+
+    cursor.execute("SELECT id, full_name, member_code FROM members ORDER BY full_name")
+    all_members = cursor.fetchall()
+
+    conn.close()
+    return render_template('admin/activity.html', activities=activities, all_members=all_members)
+
+@app.route('/admin/settings', methods=['GET', 'POST'])
+@admin_required
+def admin_settings():
+    if request.method == 'POST':
+        try:
+            visit_w = float(request.form.get('visit_weight', 10.0))
+            spend_w = float(request.form.get('spending_weight', 0.5))
+            referral_w = float(request.form.get('referral_weight', 50.0))
+            profit_pool = float(request.form.get('profit_sharing_pool', 10000.0))
+        except ValueError:
+            flash('Invalid numeric inputs for algorithm settings.', 'danger')
+            return redirect(url_for('admin_settings'))
+
+        if visit_w < 0 or spend_w < 0 or referral_w < 0 or profit_pool < 0:
+            flash('Algorithm parameters and profit pool cannot be negative.', 'danger')
+            return redirect(url_for('admin_settings'))
+
+        RewardSettings.update_settings(visit_w, spend_w, referral_w, profit_pool)
+        flash('Algorithm parameters & profit-sharing pool updated successfully!', 'success')
+        return redirect(url_for('admin_settings'))
+
+    settings = RewardSettings.get_settings()
+    return render_template('admin/settings.html', settings=settings)
+
+@app.route('/admin/reports')
+@admin_required
+def admin_reports():
+    return render_template('admin/reports.html')
+
+@app.route('/admin/reports/export/usage_csv')
+@admin_required
+def export_usage_csv():
+    csv_data = CSVReportGenerator.export_member_usage_logs()
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-disposition": "attachment; filename=fairshare_member_usage_logs.csv"}
+    )
+
+@app.route('/admin/reports/export/rewards_csv')
+@admin_required
+def export_rewards_csv():
+    csv_data = CSVReportGenerator.export_financial_reward_summaries()
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-disposition": "attachment; filename=fairshare_financial_reward_summaries.csv"}
+    )
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)

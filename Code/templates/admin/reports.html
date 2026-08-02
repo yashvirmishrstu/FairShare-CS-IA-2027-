@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Export CSV Reports - FairShare Admin{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+  <h1>Executive CSV Report Exports</h1>
+  <p style="color: var(--text-muted);">Download full usage logs and financial reward summaries in CSV format for auditing and record-keeping.</p>
+</div>
+
+<div class="grid grid-cols-2" style="gap: 2rem;">
+  <div class="card" style="padding: 2rem;">
+    <div class="badge badge-blue" style="margin-bottom: 0.75rem;">Usage Log Data</div>
+    <h3>Member Activity & Facility Log CSV</h3>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem; margin-bottom: 1.5rem;">
+      Exports all recorded member visits, facility check-ins, restaurant dining transactions, pro shop purchases, and guest referrals along with exact timestamp data.
+    </p>
+    <a href="{{ url_for('export_usage_csv') }}" class="btn btn-primary" style="width: 100%;">
+      Download Usage Logs CSV &darr;
+    </a>
+  </div>
+
+  <div class="card" style="padding: 2rem;">
+    <div class="badge badge-emerald" style="margin-bottom: 0.75rem;">Financial Data</div>
+    <h3>Financial Rewards & Profit Sharing CSV</h3>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem; margin-bottom: 1.5rem;">
+      Exports calculated member engagement scores, assigned personalized discount percentage bands, proportional earned profit share ($), and active redemption voucher codes.
+    </p>
+    <a href="{{ url_for('export_rewards_csv') }}" class="btn btn-emerald" style="width: 100%;">
+      Download Financial Reward Summary CSV &darr;
+    </a>
+  </div>
+</div>
+{% endblock %}
