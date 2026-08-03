@@ -4,10 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}FairShare - Personalized Club Rewards & Profit Sharing{% endblock %}</title>
-  
+
   <!-- CSS Styles -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=2">
-  
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=3">
+
+  <!-- Outfit typeface -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+
   <!-- Fast JS Libraries from CDN for Barcode, QR Code, and Analytics -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -19,8 +24,9 @@
   <nav class="navbar">
     <div class="navbar-container">
       <a href="{% if current_user %}{% if current_user.role == 'admin' %}{{ url_for('admin_dashboard') }}{% else %}{{ url_for('member_dashboard') }}{% endif %}{% else %}{{ url_for('index') }}{% endif %}" class="brand-logo">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square">
+          <circle cx="12" cy="12" r="9"></circle>
+          <rect x="12" y="2" width="10" height="10"></rect>
         </svg>
         FairShare
         <span class="brand-badge">Club Portal</span>
@@ -41,7 +47,16 @@
             <li><a href="{{ url_for('member_rewards') }}" class="nav-link">My Rewards</a></li>
           {% endif %}
           <li><a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm">Log Out ({{ current_user.username }})</a></li>
+        {% elif current_guest %}
+          <li><a href="{{ url_for('guest_dashboard') }}" class="nav-link">My Day Pass</a></li>
+          <li><a href="{{ url_for('guest_quick') }}" class="nav-link">Record Purchase</a></li>
+          <li>
+            <form action="{{ url_for('guest_logout') }}" method="POST" style="display:inline;">
+              <button type="submit" class="btn btn-secondary btn-sm">End Visit ({{ current_guest.guest_name }})</button>
+            </form>
+          </li>
         {% else %}
+          <li><a href="{{ url_for('guest_quick') }}" class="nav-link">Guest Check-In</a></li>
           <li><a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Log In</a></li>
         {% endif %}
       </ul>
@@ -50,6 +65,10 @@
 
   <!-- Main Content Shell -->
   <main class="main-content">
+    <!-- Geometric Background Motifs -->
+    <div class="geo geo-circle" style="width: 220px; height: 220px; top: 8%; right: -60px;"></div>
+    <div class="geo geo-triangle" style="bottom: 10%; left: -40px;"></div>
+
     <!-- Flash Notifications Container -->
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
@@ -57,7 +76,7 @@
           {% for category, message in messages %}
             <div class="alert alert-{{ category }}">
               <span>{{ message }}</span>
-              <button onclick="this.parentElement.remove()" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:bold;">&times;</button>
+              <button onclick="this.parentElement.remove()" style="background:none; border:none; color:inherit; cursor:pointer; font-weight:bold; font-size:1.1rem;">&times;</button>
             </div>
           {% endfor %}
         </div>
@@ -69,10 +88,11 @@
 
   <!-- Footer -->
   <footer>
-    <p>&copy; 2026 FairShare - Personalised Member Reward & Profit Sharing Platform. All rights reserved.</p>
+    <span>&copy; 2026 FairShare — Club Management System</span>
+    <span>SYSTEM_STATE: STABLE</span>
   </footer>
 
   <!-- App Interactive JavaScript -->
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=2"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=3"></script>
 </body>
 </html>

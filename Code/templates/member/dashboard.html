@@ -7,14 +7,14 @@
   <div>
     <span class="badge badge-blue" style="margin-bottom: 0.5rem;">{{ member.membership_type }} Member</span>
     <h1 style="font-size: 2.2rem;">Welcome back, {{ member.full_name }}!</h1>
-    <p style="color: var(--text-muted); font-size: 0.95rem;">Member Code: <code style="color: var(--accent-cyan);">{{ member.member_code }}</code> | Joined: {{ member.join_date[:10] }}</p>
+    <p style="color: var(--text-muted); font-size: 0.95rem;">Member Code: <code>{{ member.member_code }}</code> | Joined: {{ member.join_date[:10] }}</p>
   </div>
   <a href="{{ url_for('member_activity') }}" class="btn btn-primary">View My History</a>
 </div>
 
 <!-- Stat Cards -->
 <div class="grid grid-cols-4" style="margin-bottom: 2rem;">
-  <div class="card stat-card purple">
+  <div class="card stat-card blue">
     <span class="stat-label">Engagement Score</span>
     <span class="stat-value">{{ "%.1f"|format(rewards.engagement_score) }}</span>
     <span class="stat-desc">Calculated from visits & spending</span>
@@ -26,13 +26,13 @@
     <span class="stat-desc">Applied automatically to purchases</span>
   </div>
 
-  <div class="card stat-card amber">
+  <div class="card stat-card red">
     <span class="stat-label">Earned Profit Share</span>
     <span class="stat-value">${{ "%.2f"|format(rewards.earned_profit_share) }}</span>
     <span class="stat-desc">Your share of current pool</span>
   </div>
 
-  <div class="card stat-card">
+  <div class="card stat-card purple">
     <span class="stat-label">Total Value Generated</span>
     <span class="stat-value">${{ "%.2f"|format(rewards.details.total_spending) }}</span>
     <span class="stat-desc">${{ "%.2f"|format(rewards.details.direct_spending) }} direct + ${{ "%.2f"|format(rewards.details.guest_spending) }} guests</span>
@@ -53,9 +53,9 @@
     <p style="color: var(--text-muted); font-size: 0.85rem;">Scan the barcode posted at a facility entrance to start your session timer. Scan it again to check out.</p>
 
     {% if active_checkin %}
-      <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); padding: 1rem; border-radius: var(--radius-sm); margin-top: 1rem;">
-        <p style="font-weight: 700; color: #6ee7b7; font-size: 0.95rem;">{{ active_checkin.facility_name }}</p>
-        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">Started at {{ active_checkin.check_in_time[11:16] }} — scan the same barcode again to check out.</p>
+      <div class="session-active" style="margin-top: 1rem;">
+        <p style="font-weight: 800; color: var(--ink); font-size: 0.95rem;">{{ active_checkin.facility_name }}</p>
+        <p style="color: var(--ink); font-size: 0.85rem; margin-top: 0.2rem;">Started at {{ active_checkin.check_in_time[11:16] }} — scan the same barcode again to check out.</p>
       </div>
     {% else %}
       <div style="padding: 1.25rem 0; text-align: center;">
@@ -80,13 +80,13 @@
 
     {% if guests %}
       <div style="margin-top: 1rem; max-height: 170px; overflow-y: auto; font-size: 0.8rem;">
-        <span style="color: var(--text-dim); font-weight: 600;">Guest Passes — show the QR to your guest:</span>
+        <span style="color: var(--text-dim); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;">Guest Passes — show the QR to your guest:</span>
         {% for g in guests[:3] %}
-          <div style="display: flex; align-items: center; gap: 0.6rem; border-bottom: 1px dashed var(--border-glass); padding: 0.4rem 0;">
+          <div style="display: flex; align-items: center; gap: 0.6rem; border-bottom: 3px solid var(--ink); padding: 0.4rem 0;">
             <div class="guest-pass-qr"><div data-qr="{{ g.guest_code }}" data-qr-width="52"></div></div>
             <div style="flex: 1;">
-              <p style="font-weight: 600;">{{ g.guest_name }}</p>
-              <code style="color: var(--accent-amber); font-size: 0.72rem;">{{ g.guest_code }}</code>
+              <p style="font-weight: 700; text-transform: uppercase;">{{ g.guest_name }}</p>
+              <code style="color: var(--ink); font-size: 0.72rem;">{{ g.guest_code }}</code>
             </div>
           </div>
         {% endfor %}
@@ -99,7 +99,7 @@
 <div class="card">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
     <h3>Recent Activity History</h3>
-    <a href="{{ url_for('member_activity') }}" style="font-size: 0.9rem;">View All &rarr;</a>
+    <a href="{{ url_for('member_activity') }}" class="u-link" style="font-size: 0.9rem;">View All &rarr;</a>
   </div>
 
   <div class="table-container">

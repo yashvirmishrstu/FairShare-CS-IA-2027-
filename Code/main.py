@@ -6,7 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from config import Config
 from database import get_db, init_db
-from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManager, CSVReportGenerator
+from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManager, ReceiptManager, CSVReportGenerator
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -64,7 +64,7 @@ def guest_required(f):
             session.pop('guest_id', None)
             session.pop('guest_login_date', None)
             flash('Your guest day pass has expired. Please sign in again.', 'warning')
-            return redirect(url_for('guest_portal'))
+            return redirect(url_for('login', tab='guest'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -73,6 +73,7 @@ def guest_required(f):
 def inject_user():
     user = None
     member = None
+    guest = None
     if 'user_id' in session:
         conn = get_db()
         cursor = conn.cursor()
@@ -82,7 +83,13 @@ def inject_user():
             cursor.execute("SELECT * FROM members WHERE user_id = ?", (user['id'],))
             member = cursor.fetchone()
         conn.close()
-    return dict(current_user=user, current_member=member)
+    if 'guest_id' in session:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, guest_name, guest_code FROM guest_ids WHERE id = ?", (session['guest_id'],))
+        guest = cursor.fetchone()
+        conn.close()
+    return dict(current_user=user, current_member=member, current_guest=guest)
 
 # Public Routes
 @app.route('/')
@@ -94,31 +101,50 @@ def index():
             return redirect(url_for('member_dashboard'))
     return render_template('index.html')
 
-@app.route('/guest', methods=['GET', 'POST'])
-def guest_portal():
-    """Guest day-pass sign-in: scan the Guest Pass QR or enter its code.
-    The pass is linked to the member who created it, so all guest activity
-    is credited to that host member."""
-    # Already signed in for today? Go straight to the guest dashboard.
+@app.route('/guest/quick', methods=['GET', 'POST'])
+def guest_quick():
+    """Quick Guest Check-In & Purchase: scan the Guest Pass QR (or enter its code),
+    record a purchase in one step — the guest is signed in for the day and all
+    spending is credited to their host member's rewards."""
     today = datetime.now().strftime('%Y-%m-%d')
+
+    # Already signed in today? Go straight to their live tracking dashboard.
     if session.get('guest_id') and session.get('guest_login_date') == today:
         return redirect(url_for('guest_dashboard'))
 
     if request.method == 'POST':
         guest_code = request.form.get('guest_code', '').strip().upper()
+        service_name = request.form.get('service_name', '').strip()
+        amount_str = request.form.get('amount', '').strip()
+        try:
+            amount = float(amount_str) if amount_str else None
+        except ValueError:
+            amount = None
+
         if not guest_code:
             flash('Please scan or enter your Guest Pass Code.', 'warning')
+        elif not service_name:
+            flash('Please describe the facility service used.', 'warning')
+        elif amount is None:
+            flash('Please enter a valid transaction amount.', 'warning')
+        elif amount < 0:
+            flash('Transaction amount cannot be negative.', 'danger')
         else:
             guest = GuestManager.get_guest_by_code(guest_code)
             if not guest:
                 flash(f'Invalid Guest Pass Code "{guest_code}". Please try again.', 'danger')
             else:
+                # Sign the guest in for the day and record the purchase in one step.
+                session.clear()
                 session['guest_id'] = guest['id']
                 session['guest_login_date'] = today
-                flash(f'Welcome, {guest["guest_name"]}! Your day pass is active and linked to your host member.', 'success')
+                GuestManager.record_spending(guest['id'], service_name, amount)
+                EngagementEngine.update_member_rewards(guest['host_member_id'])
+                flash(f'Welcome, {guest["guest_name"]}! Purchase of ${amount:.2f} recorded — credited to your host member.', 'success')
                 return redirect(url_for('guest_dashboard'))
 
-    return render_template('guest.html')
+    return render_template('guest/quick.html')
+
 
 @app.route('/guest/dashboard')
 @guest_required
@@ -134,7 +160,7 @@ def guest_dashboard():
         session.pop('guest_login_date', None)
         conn.close()
         flash('Guest pass not found. Please sign in again.', 'danger')
-        return redirect(url_for('guest_portal'))
+        return redirect(url_for('login', tab='guest'))
 
     # Host member this guest is linked to
     cursor.execute("SELECT full_name, member_code FROM members WHERE id = ?", (guest['host_member_id'],))
@@ -162,11 +188,16 @@ def guest_dashboard():
     ''', (guest['id'],))
     today_spending = cursor.fetchone()[0]
 
+    # Open (unscanned) expense receipts the guest can scan to log a purchase
+    cursor.execute("SELECT * FROM receipts WHERE status = 'unscanned' ORDER BY issued_at DESC LIMIT 6")
+    open_receipts = cursor.fetchall()
+
     conn.close()
 
     return render_template('guest/dashboard.html', guest=guest, host=host,
                            active_checkin=active_checkin, recent_sessions=recent_sessions,
-                           activity=activity, today_spending=today_spending, facilities=FACILITIES)
+                           activity=activity, today_spending=today_spending, facilities=FACILITIES,
+                           open_receipts=open_receipts)
 
 @app.route('/guest/scan', methods=['POST'])
 @guest_required
@@ -206,40 +237,73 @@ def guest_logout():
     session.pop('guest_id', None)
     session.pop('guest_login_date', None)
     flash('You have been signed out of your guest day pass. Have a great visit!', 'info')
-    return redirect(url_for('guest_portal'))
+    return redirect(url_for('login', tab='guest'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        password = request.form.get('password', '')
+    """Unified sign-in for members, admins, and guests — each role is routed
+    to its own suite (member dashboard, admin dashboard, guest day portal)."""
+    today = datetime.now().strftime('%Y-%m-%d')
 
-        # Server-side Validation
-        if not username or not password:
-            flash('Username and password are required fields.', 'danger')
-            return render_template('auth/login.html')
+    tab = request.args.get('tab') if request.args.get('tab') in ('account', 'guest') else 'account'
 
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-        user = cursor.fetchone()
-        conn.close()
-
-        if user and check_password_hash(user['password_hash'], password):
-            session.clear()
-            session['user_id'] = user['id']
-            session['username'] = user['username']
-            session['role'] = user['role']
-
-            flash(f'Welcome back, {user["username"]}!', 'success')
-            if user['role'] == 'admin':
+    if request.method == 'GET':
+        # Already signed in? Go straight to the matching suite.
+        if session.get('user_id'):
+            if session.get('role') == 'admin':
                 return redirect(url_for('admin_dashboard'))
-            else:
-                return redirect(url_for('member_dashboard'))
+            return redirect(url_for('member_dashboard'))
+        if session.get('guest_id') and session.get('guest_login_date') == today:
+            return redirect(url_for('guest_dashboard'))
+        return render_template('auth/login.html', tab=tab)
 
-        flash('Invalid username or password credentials.', 'danger')
+    # POST — an explicit sign-in attempt always replaces any prior session,
+    # so a guest can switch to a member account (or vice versa) via /login.
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '')
 
-    return render_template('auth/login.html')
+    # Guest day-pass sign-in: scan the Guest Pass QR or enter its code.
+    # The pass is linked to the member who created it, so all guest activity
+    # is credited to that host member.
+    guest_code = request.form.get('guest_code', '').strip().upper()
+    if guest_code and not username:
+        guest = GuestManager.get_guest_by_code(guest_code)
+        if not guest:
+            flash(f'Invalid Guest Pass Code "{guest_code}". Please try again.', 'danger')
+            return render_template('auth/login.html', tab='guest')
+        session.clear()
+        session['guest_id'] = guest['id']
+        session['guest_login_date'] = today
+        flash(f'Welcome, {guest["guest_name"]}! Your day pass is active and linked to your host member.', 'success')
+        return redirect(url_for('guest_dashboard'))
+
+    # Member / Admin sign-in
+
+    # Server-side Validation
+    if not username or not password:
+        flash('Username and password are required fields.', 'danger')
+        return render_template('auth/login.html', tab=tab)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user and check_password_hash(user['password_hash'], password):
+        session.clear()
+        session['user_id'] = user['id']
+        session['username'] = user['username']
+        session['role'] = user['role']
+
+        flash(f'Welcome back, {user["username"]}!', 'success')
+        if user['role'] == 'admin':
+            return redirect(url_for('admin_dashboard'))
+        else:
+            return redirect(url_for('member_dashboard'))
+
+    flash('Invalid username or password credentials.', 'danger')
+    return render_template('auth/login.html', tab=tab)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -372,6 +436,118 @@ def member_scan():
 
     return render_template('member/scan.html', facilities=FACILITIES,
                            active_checkin=active_checkin, recent_sessions=recent_sessions)
+
+@app.route('/admin/receipts/issue', methods=['POST'])
+@admin_required
+def admin_receipt_issue():
+    """Issue an expense receipt voucher — its QR is scanned by the member or
+    guest at the end of the purchase to log the expense automatically."""
+    service_name = request.form.get('service_name', '').strip()
+    try:
+        amount = float(request.form.get('amount', 0.0))
+    except ValueError:
+        amount = -1.0
+
+    if not service_name:
+        flash('Please describe the service on the receipt.', 'warning')
+    elif amount < 0:
+        flash('Receipt amount cannot be negative.', 'danger')
+    else:
+        receipt = ReceiptManager.issue_receipt(service_name, amount)
+        flash(f'Receipt issued! Code {receipt["receipt_code"]} — show the QR so the member can scan it.', 'success')
+    return redirect(url_for('admin_activity'))
+
+@app.route('/member/expenses')
+@login_required
+def member_expenses():
+    """Member QR expense tracker: scan the QR at the end of a receipt to log
+    the expense automatically, plus a full expense ledger."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+
+    if not member:
+        conn.close()
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
+    # Expense ledger: purchase activities + receipts scanned by this member
+    cursor.execute('''
+        SELECT activity_type, service_name, transaction_value, created_at
+        FROM activities WHERE member_id = ? AND activity_type = 'purchase'
+        ORDER BY created_at DESC LIMIT 15
+    ''', (member['id'],))
+    expenses = cursor.fetchall()
+
+    cursor.execute('''
+        SELECT * FROM receipts WHERE scanned_by_member = ? ORDER BY scanned_at DESC LIMIT 10
+    ''', (member['id'],))
+    scanned_receipts = cursor.fetchall()
+
+    # Open (unscanned) receipts that can still be logged — demo scan cards
+    cursor.execute("SELECT * FROM receipts WHERE status = 'unscanned' ORDER BY issued_at DESC LIMIT 6")
+    open_receipts = cursor.fetchall()
+
+    conn.close()
+    return render_template('member/expenses.html', member=member, expenses=expenses,
+                           scanned_receipts=scanned_receipts, open_receipts=open_receipts)
+
+@app.route('/member/receipts/scan', methods=['POST'])
+@login_required
+def member_receipt_scan():
+    """Member scans the QR at the end of a receipt — logs the expense and
+    updates the member's rewards."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+    conn.close()
+
+    receipt_code = request.form.get('receipt_code', '').strip().upper()
+    if not receipt_code:
+        flash('No receipt QR detected. Please scan the QR at the end of your receipt.', 'warning')
+        return redirect(url_for('member_expenses'))
+
+    if not member:
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('member_expenses'))
+
+    result = ReceiptManager.redeem_for_member(receipt_code, member['id'])
+    if result['ok']:
+        EngagementEngine.update_member_rewards(member['id'])
+        flash(result['message'], 'success')
+    else:
+        flash(result['message'], 'danger')
+    return redirect(url_for('member_expenses'))
+
+@app.route('/guest/receipts/scan', methods=['POST'])
+@guest_required
+def guest_receipt_scan():
+    """Guest scans the receipt QR — the expense is logged to their ledger and
+    credited to their host member's rewards."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM guest_ids WHERE id = ?", (session['guest_id'],))
+    guest = cursor.fetchone()
+    conn.close()
+
+    receipt_code = request.form.get('receipt_code', '').strip().upper()
+    if not receipt_code:
+        flash('No receipt QR detected. Please scan the QR at the end of your receipt.', 'warning')
+        return redirect(url_for('guest_dashboard'))
+
+    if not guest:
+        flash('Guest pass not found. Please sign in again.', 'danger')
+        return redirect(url_for('login', tab='guest'))
+
+    result = ReceiptManager.redeem_for_guest(receipt_code, guest['id'])
+    if result['ok']:
+        EngagementEngine.update_member_rewards(guest['host_member_id'])
+        flash(result['message'], 'success')
+    else:
+        flash(result['message'], 'danger')
+    return redirect(url_for('guest_dashboard'))
 
 @app.route('/admin/checkin', methods=['POST'])
 @admin_required
@@ -632,8 +808,17 @@ def admin_activity():
     ''')
     checkins = cursor.fetchall()
 
+    # Recently issued expense receipts (QR vouchers)
+    cursor.execute('''
+        SELECT r.*, m.full_name AS scanned_by_name
+        FROM receipts r
+        LEFT JOIN members m ON r.scanned_by_member = m.id
+        ORDER BY r.issued_at DESC LIMIT 12
+    ''')
+    receipts = cursor.fetchall()
+
     conn.close()
-    return render_template('admin/activity.html', activities=activities, all_members=all_members, checkins=checkins, facilities=FACILITIES)
+    return render_template('admin/activity.html', activities=activities, all_members=all_members, checkins=checkins, facilities=FACILITIES, receipts=receipts)
 
 @app.route('/admin/settings', methods=['GET', 'POST'])
 @admin_required

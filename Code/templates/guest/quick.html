@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Quick Guest Check-In & Purchase - FairShare{% endblock %}
+
+{% block content %}
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<div style="max-width: 560px; margin: 2.5rem auto; position: relative;">
+  <div class="card guest-quick-card">
+    <div style="text-align: left; margin-bottom: 1.75rem;">
+      <span class="badge badge-blue" style="margin-bottom: 0.75rem;">Guest Services</span>
+      <h2 style="font-size: 1.9rem; margin-bottom: 0.4rem;">Quick Guest Check-In &amp; Purchase</h2>
+      <p style="color: var(--text-muted); font-size: 0.92rem; line-height: 1.65;">
+        Are you visiting with a member? Record purchases using your unique
+        Guest Pass ID to credit rewards to your host!
+      </p>
+    </div>
+
+    <!-- QR Camera Scanner -->
+    <button type="button" id="guest-camera-toggle" class="btn btn-ghost btn-sm" style="width: 100%; margin-bottom: 1rem;" data-label-on="Scan QR Code">
+      Scan QR Code
+    </button>
+    <div id="guest-camera-viewport" class="camera-viewport" style="display: none;"></div>
+    <div id="guest-scan-toast" class="scan-toast" hidden></div>
+
+    <form action="{{ url_for('guest_quick') }}" method="POST" id="guest-login-form">
+      <div class="form-group">
+        <label class="form-label">Guest Pass Code *</label>
+        <input type="text" name="guest_code" id="guest-code-input" class="form-control"
+               placeholder="E.G. GST-1A2B3C" autocomplete="off" autocapitalize="characters"
+               spellcheck="false" required style="text-transform: uppercase;"
+               value="{{ request.form.get('guest_code', '') }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Facility Service Used *</label>
+        <input type="text" name="service_name" class="form-control"
+               placeholder="e.g. Pro Shop / Restaurant Dining" required
+               value="{{ request.form.get('service_name', '') }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Transaction Amount ($) *</label>
+        <input type="number" step="0.01" min="0" name="amount" class="form-control"
+               placeholder="0.00" data-non-negative required
+               value="{{ request.form.get('amount', '') }}">
+      </div>
+      <button type="submit" class="btn btn-emerald" style="width: 100%; padding: 0.8rem; font-size: 1rem;">
+        Record Guest Purchase &rarr;
+      </button>
+    </form>
+
+    <p style="color: var(--text-dim); font-size: 0.8rem; text-align: left; margin-top: 1.1rem;">
+      Just visiting without a purchase? <a href="{{ url_for('login', tab='guest') }}" class="u-link">Sign in for the day instead</a>.
+    </p>
+    <p style="color: var(--text-dim); font-size: 0.78rem; text-align: left; margin-top: 0.3rem;">
+      Day passes expire at midnight. Purchases &amp; facility usage are credited to your host member's rewards.
+    </p>
+  </div>
+</div>
+{% endblock %}

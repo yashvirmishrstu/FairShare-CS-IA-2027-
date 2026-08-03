@@ -5,10 +5,10 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem;">
   <div>
-    <span class="badge badge-purple" style="margin-bottom: 0.5rem;">Guest Day Pass · Valid Today Only</span>
-    <h1 style="font-size: 2rem;">Welcome, {{ guest.guest_name }}!</h1>
+    <span class="badge badge-blue" style="margin-bottom: 0.5rem;">Guest Day Pass · Valid Today Only</span>
+    <h1 style="font-size: 2.2rem;">Welcome, {{ guest.guest_name }}!</h1>
     <p style="color: var(--text-muted); font-size: 0.95rem;">
-      Hosted by <strong style="color: var(--text-main);">{{ host.full_name }}</strong> ({{ host.member_code }}) — all activity credits their rewards.
+      Hosted by <strong style="color: var(--ink);">{{ host.full_name }}</strong> ({{ host.member_code }}) — all activity credits their rewards.
     </p>
   </div>
   <form action="{{ url_for('guest_logout') }}" method="POST">
@@ -30,13 +30,13 @@
     <span class="stat-desc">Completed sessions</span>
   </div>
 
-  <div class="card stat-card amber">
+  <div class="card stat-card red">
     <span class="stat-label">Active Facility</span>
     {% if active_checkin %}
-      <span class="stat-value" style="font-size: 1.3rem;">{{ active_checkin.facility_name }}</span>
+      <span class="stat-value" style="font-size: 1.4rem;">{{ active_checkin.facility_name }}</span>
       <span class="stat-desc">Elapsed <strong class="session-timer" data-start="{{ active_checkin.check_in_time }}">0:00</strong></span>
     {% else %}
-      <span class="stat-value" style="font-size: 1.3rem;">—</span>
+      <span class="stat-value" style="font-size: 1.4rem;">—</span>
       <span class="stat-desc">Scan a facility barcode to start</span>
     {% endif %}
   </div>
@@ -59,17 +59,17 @@
         <div style="display: flex; align-items: center; gap: 0.75rem;">
           <span class="pulse-dot"></span>
           <div>
-            <p style="font-weight: 700; color: #6ee7b7;">{{ active_checkin.facility_name }}</p>
-            <p style="color: var(--text-muted); font-size: 0.8rem;">Started {{ active_checkin.check_in_time[11:16] }} · Elapsed <strong class="session-timer" data-start="{{ active_checkin.check_in_time }}">0:00</strong></p>
+            <p style="font-weight: 800; color: var(--ink);">{{ active_checkin.facility_name }}</p>
+            <p style="color: var(--ink); font-size: 0.8rem;">Started {{ active_checkin.check_in_time[11:16] }} · Elapsed <strong class="session-timer" data-start="{{ active_checkin.check_in_time }}">0:00</strong></p>
           </div>
         </div>
-        <p style="color: var(--text-dim); font-size: 0.8rem; margin-top: 0.75rem; border-top: 1px dashed var(--border-glass); padding-top: 0.6rem;">
+        <p style="color: var(--ink); font-size: 0.8rem; margin-top: 0.75rem; border-top: 2px solid var(--ink); padding-top: 0.6rem;">
           Scan the <strong>{{ active_checkin.facility_name }}</strong> barcode again to check out.
         </p>
       </div>
     {% else %}
       <div class="session-idle">
-        <p style="color: var(--text-dim); font-size: 0.85rem;">Not checked in. Scan any facility barcode to start your timer.</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem;">Not checked in. Scan any facility barcode to start your timer.</p>
       </div>
     {% endif %}
 
@@ -88,8 +88,8 @@
     </form>
 
     <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
-      <button type="button" id="camera-toggle" class="btn btn-secondary btn-sm" style="flex: 1;" data-label-on="Use Camera">Use Camera</button>
-      <button type="button" id="clear-scanner" class="btn btn-secondary btn-sm">Clear</button>
+      <button type="button" id="camera-toggle" class="btn btn-ghost btn-sm" style="flex: 1;" data-label-on="Use Camera">Use Camera</button>
+      <button type="button" id="clear-scanner" class="btn btn-ghost btn-sm">Clear</button>
     </div>
     <div id="camera-viewport" class="camera-viewport" style="display: none;"></div>
     <div id="scan-toast" class="scan-toast" hidden></div>
@@ -102,7 +102,7 @@
             <span class="facility-code">{{ code }}</span>
           </div>
           <div style="text-align: left; flex: 1;">
-            <p style="font-weight: 600; font-size: 0.9rem;">{{ name }}</p>
+            <p style="font-weight: 700; font-size: 0.9rem; text-transform: uppercase;">{{ name }}</p>
             <p style="color: var(--text-dim); font-size: 0.75rem;">Tap to scan &rarr;</p>
           </div>
         </button>

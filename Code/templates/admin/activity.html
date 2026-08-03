@@ -8,6 +8,54 @@
   <p style="color: var(--text-muted);">View all member activity entries or manually log visits/purchases on behalf of members.</p>
 </div>
 
+<!-- QR Expense Receipt Management -->
+<div class="grid grid-cols-3" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Issue Expense Receipt -->
+  <div class="card" style="grid-column: span 1;">
+    <span class="badge badge-black" style="margin-bottom: 0.5rem;">QR Expense Vouchers</span>
+    <h3>Issue Expense Receipt</h3>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Create a receipt with a scannable QR — members &amp; guests scan it at the end of the purchase to log the expense automatically.</p>
+    <form action="{{ url_for('admin_receipt_issue') }}" method="POST" style="margin-top: 1rem;">
+      <div class="form-group">
+        <label class="form-label">Service / Description</label>
+        <input type="text" name="service_name" class="form-control" placeholder="e.g. Restaurant Dining" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Transaction Amount ($)</label>
+        <input type="number" step="0.01" min="0" name="amount" class="form-control" placeholder="0.00" data-non-negative required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Issue Receipt QR &rarr;</button>
+    </form>
+  </div>
+
+  <!-- Recently Issued Receipts -->
+  <div class="card" style="grid-column: span 2;">
+    <h3>Recently Issued Receipts</h3>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 1rem;">Each receipt carries a QR code. Once scanned, it cannot be logged again.</p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem;">
+      {% for r in receipts %}
+        <div style="border: 3px solid var(--ink); padding: 0.9rem; background: var(--surface-hi); display: flex; align-items: center; gap: 0.9rem;">
+          <div style="flex-shrink: 0;"><div data-qr="{{ r.receipt_code }}" data-qr-width="72"></div></div>
+          <div style="flex: 1; min-width: 0;">
+            <p style="font-weight: 800; text-transform: uppercase; font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.service_name }}</p>
+            <p style="font-size: 1.05rem; font-weight: 900;">${{ "%.2f"|format(r.amount) }}</p>
+            <code style="font-size: 0.7rem;">{{ r.receipt_code }}</code>
+            <div style="margin-top: 0.4rem;">
+              {% if r.status == 'scanned' %}
+                <span class="badge badge-amber">Scanned{% if r.scanned_by_name %} · {{ r.scanned_by_name }}{% endif %}</span>
+              {% else %}
+                <span class="badge badge-emerald">Open</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <p style="color: var(--text-dim);">No receipts issued yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
 <div class="grid grid-cols-3" style="gap: 1.5rem; margin-bottom: 2rem;">
   <!-- Admin Manual Activity Logger Card -->
   <div class="card" style="grid-column: span 1;">

@@ -70,8 +70,10 @@ def test_member_scan_admin_redirects_not_crash(client):
     assert b'Member profile not found' in response.data
 
 def test_guest_dashboard_requires_signin(client):
+    # No guest session -> bounced to the unified login page's guest tab
     response = client.get('/guest/dashboard', follow_redirects=True)
-    assert b'Guest Day Pass Sign-In' in response.data
+    assert b'Member / Admin' in response.data
+    assert b'Guest Pass Code' in response.data
 
 def test_guest_day_pass_login_and_tracking(client):
     # Alice creates a guest pass for her guest
@@ -90,17 +92,18 @@ def test_guest_day_pass_login_and_tracking(client):
     conn.close()
     guest_code = guest['guest_code']
 
-    # Sign-in page renders
-    response = client.get('/guest')
+    # Unified login page renders with the guest tab
+    response = client.get('/login?tab=guest')
     assert response.status_code == 200
-    assert b'Guest Day Pass Sign-In' in response.data
+    assert b'Member / Admin' in response.data
+    assert b'Guest Pass Code' in response.data
 
     # Invalid code rejected
-    response = client.post('/guest', data={'guest_code': 'GST-NOPE'}, follow_redirects=True)
+    response = client.post('/login', data={'guest_code': 'GST-NOPE'}, follow_redirects=True)
     assert b'Invalid Guest Pass Code' in response.data
 
     # Valid code -> guest dashboard linked to host member
-    response = client.post('/guest', data={'guest_code': guest_code}, follow_redirects=True)
+    response = client.post('/login', data={'guest_code': guest_code}, follow_redirects=True)
     assert response.status_code == 200
     assert b'Diana Day' in response.data
     assert b'Hosted by' in response.data
@@ -127,6 +130,108 @@ def test_guest_day_pass_login_and_tracking(client):
     assert cursor.fetchone()[0] >= 2
     conn.close()
 
+def test_guest_quick_checkin_and_purchase(client):
+    # Alice creates a guest pass for her guest
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    client.post('/member/guest/create', data={'guest_name': 'Diana Day'}, follow_redirects=True)
+    client.get('/logout')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT g.guest_code, g.id, g.host_member_id FROM guest_ids g
+        JOIN members m ON g.host_member_id = m.id
+        WHERE m.full_name = 'Alice Johnson' ORDER BY g.id DESC LIMIT 1
+    ''')
+    guest = cursor.fetchone()
+    conn.close()
+    guest_code = guest['guest_code']
+
+    # Quick page renders with the combined check-in & purchase card
+    response = client.get('/guest/quick')
+    assert response.status_code == 200
+    assert b'Quick Guest Check-In' in response.data
+    assert b'Guest Pass Code' in response.data
+    assert b'Facility Service Used' in response.data
+    assert b'Transaction Amount' in response.data
+
+    # Invalid code rejected
+    response = client.post('/guest/quick', data={
+        'guest_code': 'GST-NOPE', 'service_name': 'Bistro Lunch', 'amount': '25.50'
+    }, follow_redirects=True)
+    assert b'Invalid Guest Pass Code' in response.data
+
+    # Negative amount rejected
+    response = client.post('/guest/quick', data={
+        'guest_code': guest_code, 'service_name': 'Bistro Lunch', 'amount': '-5.00'
+    }, follow_redirects=True)
+    assert b'cannot be negative' in response.data
+
+    # Valid code + purchase -> guest signed in, redirected to tracking dashboard
+    response = client.post('/guest/quick', data={
+        'guest_code': guest_code, 'service_name': 'Bistro Lunch', 'amount': '25.50'
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Welcome, Diana Day!' in response.data
+    assert b'Hosted by' in response.data
+
+    # Guest ledger holds the purchase
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT transaction_value FROM guest_activities WHERE guest_id = ? AND activity_type = 'purchase'", (guest['id'],))
+    rows = cursor.fetchall()
+    assert any(abs(r['transaction_value'] - 25.50) < 0.001 for r in rows)
+    conn.close()
+
+    # Host engagement score reflects the guest's spending
+    summary = EngagementEngine.calculate_engagement_score(guest['host_member_id'])
+    assert summary['guest_spending'] >= 25.50
+
+def test_guest_quick_redirects_when_already_signed_in(client):
+    # Sign in as a guest for today via the day-pass portal
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    client.post('/member/guest/create', data={'guest_name': 'Fiona Fast'}, follow_redirects=True)
+    client.get('/logout')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT guest_code FROM guest_ids WHERE guest_name = 'Fiona Fast' ORDER BY id DESC LIMIT 1")
+    guest_code = cursor.fetchone()['guest_code']
+    conn.close()
+    client.post('/login', data={'guest_code': guest_code}, follow_redirects=True)
+
+    # Already signed in today -> quick page bounces straight to the dashboard
+    response = client.get('/guest/quick', follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Guest Day Pass - Fiona Fast' in response.data
+
+def test_login_invalid_tab_falls_back_to_account(client):
+    # An invalid ?tab= value must not blank the login form — both panels hidden
+    response = client.get('/login?tab=foo')
+    assert response.status_code == 200
+    assert b'Username' in response.data
+    assert b'Guest Pass Code' in response.data
+
+def test_member_login_clears_prior_guest_session(client):
+    # Sign in as guest first, then as a member — member session must replace guest
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    client.post('/member/guest/create', data={'guest_name': 'Gina Swap'}, follow_redirects=True)
+    client.get('/logout')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT guest_code FROM guest_ids WHERE guest_name = 'Gina Swap' ORDER BY id DESC LIMIT 1")
+    guest_code = cursor.fetchone()['guest_code']
+    conn.close()
+    client.post('/login', data={'guest_code': guest_code}, follow_redirects=True)
+
+    # Now log in as a member — should land in the member suite, not the guest one
+    response = client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Welcome back, alice!' in response.data
+    assert b'Member Dashboard' in response.data
+    assert b'Guest Day Pass' not in response.data
+
 def test_guest_day_pass_expires_next_day(client):
     # Create pass and sign in as the guest
     client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
@@ -138,7 +243,7 @@ def test_guest_day_pass_expires_next_day(client):
     cursor.execute("SELECT guest_code FROM guest_ids WHERE guest_name = 'Eve Expire' ORDER BY id DESC LIMIT 1")
     guest_code = cursor.fetchone()['guest_code']
     conn.close()
-    client.post('/guest', data={'guest_code': guest_code}, follow_redirects=True)
+    client.post('/login', data={'guest_code': guest_code}, follow_redirects=True)
 
     # Age the session to yesterday -> dashboard must bounce back to sign-in
     with client.session_transaction() as sess:
@@ -146,7 +251,8 @@ def test_guest_day_pass_expires_next_day(client):
 
     response = client.get('/guest/dashboard', follow_redirects=True)
     assert b'day pass has expired' in response.data
-    assert b'Guest Day Pass Sign-In' in response.data
+    assert b'Member / Admin' in response.data
+    assert b'Guest Pass Code' in response.data
 
 def test_member_scan_checkin_checkout_flow(client):
     client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)

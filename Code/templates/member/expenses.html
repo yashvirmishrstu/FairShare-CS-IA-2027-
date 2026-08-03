@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Expense Tracker - {{ member.full_name }}{% endblock %}
+
+{% block content %}
+<!-- Camera QR scanning library (only loaded on this page) -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<div style="margin-bottom: 2rem;">
+  <span class="badge badge-black" style="margin-bottom: 0.5rem;">QR Expense Logging</span>
+  <h1>Track Expenses by Receipt</h1>
+  <p style="color: var(--text-muted);">Every receipt ends with a QR code. Scan it to log the expense automatically — no typing, no paperwork.</p>
+</div>
+
+<div class="grid grid-cols-2" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Receipt QR Scanner Card -->
+  <div class="card" id="receipt-scanner-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h3>Scan Receipt QR</h3>
+      <span class="badge badge-blue">RCPT Codes</span>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.5rem;">
+      Point your camera at the QR printed at the end of the receipt, or enter the code below.
+    </p>
+
+    <form action="{{ url_for('member_receipt_scan') }}" method="POST" id="receipt-scanner-form" class="scanner-form">
+      <div class="scanner-frame">
+        <span class="scan-corner tl"></span><span class="scan-corner tr"></span>
+        <span class="scan-corner bl"></span><span class="scan-corner br"></span>
+        <div class="scan-line"></div>
+        <input type="text" name="receipt_code" id="receipt-code-input" class="scanner-input"
+               placeholder="SCAN RECEIPT QR…" aria-label="Receipt QR code"
+               autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus required>
+      </div>
+      <p style="color: var(--text-dim); font-size: 0.78rem; text-align: center; margin-top: 0.5rem;">
+        USB scanner or manual code entry · codes look like <code>RCPT-1A2B3C</code>
+      </p>
+    </form>
+
+    <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+      <button type="button" id="receipt-camera-toggle" class="btn btn-ghost btn-sm" style="flex: 1;" data-label-on="Use Camera">Use Camera</button>
+      <button type="button" id="receipt-clear-scanner" class="btn btn-ghost btn-sm">Clear</button>
+    </div>
+    <div id="receipt-camera-viewport" class="camera-viewport" style="display: none;"></div>
+    <div id="receipt-scan-toast" class="scan-toast" hidden></div>
+
+    <!-- Open Receipts (demo scan cards) -->
+    {% if open_receipts %}
+      <div style="margin-top: 1.25rem;">
+        <span style="color: var(--text-dim); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.72rem;">Open Receipts — tap to log:</span>
+        <div style="display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.6rem; max-height: 300px; overflow-y: auto;">
+          {% for r in open_receipts %}
+            <button type="button" class="facility-scan-card" data-receipt-code="{{ r.receipt_code }}">
+              <div class="facility-barcode-box">
+                <div class="facility-qr"><div data-qr="{{ r.receipt_code }}" data-qr-width="52"></div></div>
+                <span class="facility-code">{{ r.receipt_code }}</span>
+              </div>
+              <div style="text-align: left; flex: 1;">
+                <p style="font-weight: 700; font-size: 0.85rem; text-transform: uppercase;">{{ r.service_name }}</p>
+                <p style="color: var(--text-dim); font-size: 0.75rem;">${{ "%.2f"|format(r.amount) }} · tap to log &rarr;</p>
+              </div>
+            </button>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Expense Ledger -->
+  <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+    <div class="card">
+      <h3>Receipt Expense Ledger</h3>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 0.85rem;">Expenses logged automatically from scanned receipt QR codes.</p>
+      <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+        <table class="table">
+          <thead>
+            <tr><th>Receipt</th><th>Description</th><th>Amount</th><th>Scanned</th></tr>
+          </thead>
+          <tbody>
+            {% for r in scanned_receipts %}
+              <tr>
+                <td><code style="font-size: 0.72rem;">{{ r.receipt_code }}</code></td>
+                <td>{{ r.service_name }}</td>
+                <td>${{ "%.2f"|format(r.amount) }}</td>
+                <td>{{ r.scanned_at[:10] if r.scanned_at else '—' }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" style="text-align:center; color: var(--text-dim);">No receipt expenses logged yet. Scan a receipt QR to get started.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>All Purchase Expenses</h3>
+      <div class="table-container" style="margin-top: 0.85rem; max-height: 280px; overflow-y: auto;">
+        <table class="table">
+          <thead>
+            <tr><th>Date</th><th>Description</th><th>Value</th></tr>
+          </thead>
+          <tbody>
+            {% for e in expenses %}
+              <tr>
+                <td>{{ e.created_at[:10] }}</td>
+                <td>{{ e.service_name }}</td>
+                <td>${{ "%.2f"|format(e.transaction_value) }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="3" style="text-align:center; color: var(--text-dim);">No purchase expenses recorded.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

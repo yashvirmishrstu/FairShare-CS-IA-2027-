@@ -29,20 +29,20 @@
         <div style="display: flex; align-items: center; gap: 0.75rem;">
           <span class="pulse-dot"></span>
           <div>
-            <p style="font-weight: 700; color: #6ee7b7;">{{ active_checkin.facility_name }}</p>
-            <p style="color: var(--text-muted); font-size: 0.8rem;">
+            <p style="font-weight: 800; color: var(--ink);">{{ active_checkin.facility_name }}</p>
+            <p style="color: var(--ink); font-size: 0.8rem;">
               Started {{ active_checkin.check_in_time[11:16] }} · Elapsed
               <strong id="session-timer" class="session-timer" data-start="{{ active_checkin.check_in_time }}">0:00</strong>
             </p>
           </div>
         </div>
-        <p style="color: var(--text-dim); font-size: 0.8rem; margin-top: 0.75rem; border-top: 1px dashed var(--border-glass); padding-top: 0.6rem;">
+        <p style="color: var(--ink); font-size: 0.8rem; margin-top: 0.75rem; border-top: 2px solid var(--ink); padding-top: 0.6rem;">
           Scan the <strong>{{ active_checkin.facility_name }}</strong> barcode again to check out.
         </p>
       </div>
     {% else %}
       <div class="session-idle">
-        <p style="color: var(--text-dim); font-size: 0.85rem;">Not checked in. Scan any facility barcode to start your timer.</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem;">Not checked in. Scan any facility barcode to start your timer.</p>
       </div>
     {% endif %}
 
@@ -62,10 +62,10 @@
     </form>
 
     <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
-      <button type="button" id="camera-toggle" class="btn btn-secondary btn-sm" style="flex: 1;" data-label-on="Use Camera">
+      <button type="button" id="camera-toggle" class="btn btn-ghost btn-sm" style="flex: 1;" data-label-on="Use Camera">
         Use Camera
       </button>
-      <button type="button" id="clear-scanner" class="btn btn-secondary btn-sm">Clear</button>
+      <button type="button" id="clear-scanner" class="btn btn-ghost btn-sm">Clear</button>
     </div>
     <div id="camera-viewport" class="camera-viewport" style="display: none;"></div>
     <div id="scan-toast" class="scan-toast" hidden></div>
@@ -85,7 +85,7 @@
             <span class="facility-code">{{ code }}</span>
           </div>
           <div style="text-align: left; flex: 1;">
-            <p style="font-weight: 600; font-size: 0.9rem;">{{ name }}</p>
+            <p style="font-weight: 700; font-size: 0.9rem; text-transform: uppercase;">{{ name }}</p>
             <p style="color: var(--text-dim); font-size: 0.75rem;">Tap to scan &rarr;</p>
           </div>
           <div class="facility-qr"><div data-qr="{{ code }}" data-qr-width="72"></div></div>

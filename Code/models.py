@@ -293,6 +293,88 @@ class GuestManager:
         return True
 
 
+class ReceiptManager:
+    """QR expense receipts: admins issue a receipt voucher with a unique
+    RCPT-XXXX code; members scan the QR at the end of the receipt to log
+    the expense automatically. Each receipt can be scanned exactly once
+    (deduplicated) — a member scan logs it to their ledger, a guest scan
+    logs it to the guest ledger and credits the host member."""
+
+    @staticmethod
+    def issue_receipt(service_name, amount):
+        """Create a new unscanned expense receipt voucher."""
+        conn = get_db()
+        cursor = conn.cursor()
+        receipt_code = f"RCPT-{uuid.uuid4().hex[:6].upper()}"
+        cursor.execute('''
+            INSERT INTO receipts (receipt_code, service_name, amount)
+            VALUES (?, ?, ?)
+        ''', (receipt_code, service_name, amount))
+        conn.commit()
+        receipt_id = cursor.lastrowid
+        conn.close()
+        return {'id': receipt_id, 'receipt_code': receipt_code, 'service_name': service_name, 'amount': amount}
+
+    @staticmethod
+    def get_receipt_by_code(receipt_code):
+        """Look up a receipt by its RCPT-XXXX code."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM receipts WHERE receipt_code = ?", (receipt_code,))
+        receipt = cursor.fetchone()
+        conn.close()
+        return receipt
+
+    @staticmethod
+    def redeem_for_member(receipt_code, member_id):
+        """Scan a receipt QR for a member — logs the expense to their activity
+        ledger. Returns dict with 'ok' and 'message'. A receipt that has
+        already been scanned is rejected (deduplication)."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM receipts WHERE receipt_code = ?", (receipt_code,))
+        receipt = cursor.fetchone()
+        if not receipt:
+            conn.close()
+            return {'ok': False, 'message': f'Invalid receipt code "{receipt_code}". Please scan a valid receipt QR.'}
+        if receipt['status'] == 'scanned':
+            conn.close()
+            return {'ok': False, 'message': f'Receipt {receipt_code} has already been scanned and logged.'}
+
+        cursor.execute("UPDATE receipts SET status = 'scanned', scanned_by_member = ?, scanned_at = datetime('now') WHERE id = ?", (member_id, receipt['id']))
+        cursor.execute('''
+            INSERT INTO activities (member_id, activity_type, service_name, transaction_value)
+            VALUES (?, 'purchase', ?, ?)
+        ''', (member_id, receipt['service_name'], receipt['amount']))
+        conn.commit()
+        conn.close()
+        return {'ok': True, 'message': f'Expense of ${receipt["amount"]:.2f} for {receipt["service_name"]} logged from receipt {receipt_code}!'}
+
+    @staticmethod
+    def redeem_for_guest(receipt_code, guest_id):
+        """Scan a receipt QR for a guest — logs the expense to the guest
+        ledger (credited to their host member's rewards). Deduplicated."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM receipts WHERE receipt_code = ?", (receipt_code,))
+        receipt = cursor.fetchone()
+        if not receipt:
+            conn.close()
+            return {'ok': False, 'message': f'Invalid receipt code "{receipt_code}". Please scan a valid receipt QR.'}
+        if receipt['status'] == 'scanned':
+            conn.close()
+            return {'ok': False, 'message': f'Receipt {receipt_code} has already been scanned and logged.'}
+
+        cursor.execute("UPDATE receipts SET status = 'scanned', scanned_by_guest = ?, scanned_at = datetime('now') WHERE id = ?", (guest_id, receipt['id']))
+        cursor.execute('''
+            INSERT INTO guest_activities (guest_id, activity_type, service_name, transaction_value)
+            VALUES (?, 'purchase', ?, ?)
+        ''', (guest_id, receipt['service_name'], receipt['amount']))
+        conn.commit()
+        conn.close()
+        return {'ok': True, 'message': f'Purchase of ${receipt["amount"]:.2f} from receipt {receipt_code} — credited to your host member!'}
+
+
 class CSVReportGenerator:
     @staticmethod
     def export_member_usage_logs():

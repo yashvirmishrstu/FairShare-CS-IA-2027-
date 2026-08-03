@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import uuid
 from werkzeug.security import generate_password_hash
 from config import Config
 
@@ -102,6 +103,20 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_code TEXT UNIQUE NOT NULL,
+            service_name TEXT NOT NULL,
+            amount REAL NOT NULL DEFAULT 0.0,
+            status TEXT NOT NULL DEFAULT 'unscanned' CHECK(status IN ('unscanned', 'scanned')),
+            scanned_by_member INTEGER,
+            scanned_by_guest INTEGER,
+            scanned_at TIMESTAMP,
+            issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (scanned_by_member) REFERENCES members (id) ON DELETE SET NULL,
+            FOREIGN KEY (scanned_by_guest) REFERENCES guest_ids (id) ON DELETE SET NULL
+        );
     ''')
 
     # Migration: add guest facility tracking column to facility_checkins (existing databases)
@@ -155,6 +170,19 @@ def init_db():
                 cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value) VALUES (?, 'visit', 'Tennis Court Session', 0.0)", (member_id,))
                 cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value) VALUES (?, 'purchase', 'Bistro & Grill', 320.00)", (member_id,))
                 cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value, guest_count) VALUES (?, 'referral', 'Guest Referral - Golf Tournament', 0.0, 3)", (member_id,))
+
+    # Seed Demo Expense Receipts (QR-scannable vouchers) if empty
+    cursor.execute("SELECT COUNT(*) FROM receipts")
+    if cursor.fetchone()[0] == 0:
+        demo_receipts = [
+            ("Club Restaurant Dining", 42.75),
+            ("Pro Shop Equipment", 18.99),
+            ("Spa & Wellness Retreat", 95.00),
+            ("Bistro & Lounge", 12.50),
+        ]
+        for svc, amt in demo_receipts:
+            rcode = f"RCPT-{uuid.uuid4().hex[:6].upper()}"
+            cursor.execute("INSERT INTO receipts (receipt_code, service_name, amount) VALUES (?, ?, ?)", (rcode, svc, amt))
 
     conn.commit()
     conn.close()

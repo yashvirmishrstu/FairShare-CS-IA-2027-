@@ -3,37 +3,85 @@
 {% block title %}Log In - FairShare System{% endblock %}
 
 {% block content %}
-<div style="max-width: 440px; margin: 3rem auto;">
-  <div class="card" style="padding: 2.25rem;">
-    <div style="text-align: center; margin-bottom: 1.75rem;">
-      <h2 style="font-size: 1.8rem; margin-bottom: 0.25rem;">Welcome Back</h2>
-      <p style="color: var(--text-muted); font-size: 0.9rem;">Sign in to your FairShare Member or Admin Account</p>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<div style="max-width: 500px; margin: 2.5rem auto; position: relative;">
+  <div class="card auth-login-card" style="padding: 2.25rem;">
+    <div style="text-align: left; margin-bottom: 1.5rem;">
+      <span class="badge badge-red" style="margin-bottom: 0.75rem;">Member Access</span>
+      <h2 style="font-size: 1.9rem; margin-bottom: 0.25rem;">Welcome Back</h2>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">One sign-in for members, admins &amp; guests — each gets its own suite.</p>
     </div>
 
-    <form action="{{ url_for('login') }}" method="POST">
-      <div class="form-group">
-        <label class="form-label">Username</label>
-        <input type="text" name="username" class="form-control" placeholder="Enter username (e.g. alice / admin)" required autofocus>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Password</label>
-        <input type="password" name="password" class="form-control" placeholder="Enter password" required>
-      </div>
-
-      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; padding: 0.8rem;">
-        Sign In &rarr;
+    <!-- Role Tabs -->
+    <div class="auth-tabs" role="tablist">
+      <button type="button" class="auth-tab {% if tab == 'account' %}active{% endif %}" data-tab="account" role="tab" aria-selected="{% if tab == 'account' %}true{% else %}false{% endif %}">
+        Member / Admin
       </button>
-    </form>
+      <button type="button" class="auth-tab {% if tab == 'guest' %}active{% endif %}" data-tab="guest" role="tab" aria-selected="{% if tab == 'guest' %}true{% else %}false{% endif %}">
+        Guest
+      </button>
+    </div>
 
-    <div style="margin-top: 1.5rem; text-align: center; border-top: 1px solid var(--border-glass); padding-top: 1.25rem;">
+    <!-- Member / Admin Panel -->
+    <div class="auth-panel" data-panel="account" {% if tab != 'account' %}hidden{% endif %}>
+      <form action="{{ url_for('login') }}" method="POST">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" name="username" class="form-control" placeholder="Enter username (e.g. alice / admin)" required autofocus>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" name="password" class="form-control" placeholder="Enter password" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; padding: 0.8rem;">
+          Sign In &rarr;
+        </button>
+      </form>
+      <p style="color: var(--text-dim); font-size: 0.8rem; text-align: left; margin-top: 0.9rem;">
+        Admins and members land in their own dashboards automatically.
+      </p>
+    </div>
+
+    <!-- Guest Panel -->
+    <div class="auth-panel" data-panel="guest" {% if tab != 'guest' %}hidden{% endif %}>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.9rem;">
+        Scan the Guest Pass QR code shown by the member who invited you, or enter your pass code. Your visit is linked to your host member and lasts for today only.
+      </p>
+
+      <button type="button" id="guest-camera-toggle" class="btn btn-ghost btn-sm" style="width: 100%; margin-bottom: 1rem;" data-label-on="Scan QR Code">
+        Scan QR Code
+      </button>
+      <div id="guest-camera-viewport" class="camera-viewport" style="display: none;"></div>
+      <div id="guest-scan-toast" class="scan-toast" hidden></div>
+
+      <form action="{{ url_for('login') }}" method="POST" id="guest-login-form">
+        <div class="form-group">
+          <label class="form-label">Guest Pass Code *</label>
+          <input type="text" name="guest_code" id="guest-code-input" class="form-control"
+                 placeholder="e.g. GST-1A2B3C" autocomplete="off" autocapitalize="characters"
+                 spellcheck="false" required style="text-transform: uppercase;">
+        </div>
+        <button type="submit" class="btn btn-secondary" style="width: 100%; padding: 0.8rem;">
+          Sign In for Today &rarr;
+        </button>
+      </form>
+      <p style="color: var(--text-dim); font-size: 0.78rem; text-align: left; margin-top: 0.9rem;">
+        Day passes expire at midnight. All purchases &amp; facility usage are credited to the hosting member's rewards.
+      </p>
+    </div>
+
+    <div style="margin-top: 1.5rem; text-align: left; border-top: 4px solid var(--ink); padding-top: 1.25rem;">
       <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.75rem;">
         Member accounts are provisioned exclusively by club managers.
       </p>
-      <div style="margin-top: 1rem; background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: var(--radius-sm); font-size: 0.8rem; color: var(--text-muted);">
-        <strong>Demo Accounts:</strong><br>
+      <div style="margin-top: 1rem; background: var(--surface-dim); border: 3px solid var(--ink); padding: 0.75rem; font-size: 0.8rem; color: var(--ink);">
+        <strong style="text-transform: uppercase; letter-spacing: 0.06em;">Demo Accounts:</strong><br>
         Member: <code>alice</code> / <code>password123</code><br>
-        Admin: <code>admin</code> / <code>admin123</code>
+        Admin: <code>admin</code> / <code>admin123</code><br>
+        Guest: pass code created by a member
       </div>
     </div>
   </div>

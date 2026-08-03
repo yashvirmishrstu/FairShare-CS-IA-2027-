@@ -7,8 +7,39 @@ document.addEventListener('DOMContentLoaded', () => {
   initBarcodeAndQRCodes();
   initFacilityScanner();
   initGuestLogin();
+  initAuthTabs();
   initAdminAnalytics();
 });
+
+// Unified login page: switch between Member/Admin and Guest sign-in panels
+function initAuthTabs() {
+  const tabs = document.querySelectorAll('.auth-tab');
+  if (!tabs.length) return;
+
+  const activate = (tab) => {
+    const target = tab.getAttribute('data-tab');
+    tabs.forEach(t => {
+      const active = t === tab;
+      t.classList.toggle('active', active);
+      t.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('.auth-panel').forEach(panel => {
+      panel.hidden = panel.getAttribute('data-panel') !== target;
+    });
+    // Focus the first field of the newly shown panel (skip on initial render so
+    // the server-side autofocus / user's own focus is not stolen)
+    if (!initAuthTabs._initialized) {
+      initAuthTabs._initialized = true;
+      return;
+    }
+    const firstInput = document.querySelector(`.auth-panel[data-panel="${target}"] input`);
+    if (firstInput) firstInput.focus();
+  };
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => activate(tab));
+  });
+}
 
 // Client-side form validation
 function initClientValidation() {
@@ -214,6 +245,15 @@ function initGuestLogin() {
     const input = document.getElementById('guest-code-input');
     if (input) input.value = code;
     playScanBeep(660, 0.1);
+
+    // If the form has other required fields (e.g. the Quick Check-In & Purchase
+    // page), native validation would silently block submission — instead fill the
+    // code, then focus the first empty required field so the user completes it.
+    const emptyRequired = Array.from(form.querySelectorAll('[required]')).find(f => !f.value.trim());
+    if (emptyRequired) {
+      emptyRequired.focus();
+      return;
+    }
     form.requestSubmit();
   }
 }
@@ -317,18 +357,18 @@ function initAdminAnalytics() {
             datasets: [{
               label: 'Total Usage (Minutes)',
               data: durations.length ? durations : [120, 90, 240, 60],
-              backgroundColor: 'rgba(16, 185, 129, 0.7)',
-              borderColor: '#10b981',
-              borderWidth: 1.5,
-              borderRadius: 6
+              backgroundColor: 'rgba(169, 0, 14, 0.75)',
+              borderColor: '#121212',
+              borderWidth: 2,
+              borderRadius: 0
             }]
           },
           options: {
             responsive: true,
-            plugins: { legend: { labels: { color: '#9ca3af' } } },
+            plugins: { legend: { labels: { color: '#1c1b1b', font: { family: 'Outfit', weight: 700 } } } },
             scales: {
-              x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-              y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+              x: { ticks: { color: '#1c1b1b' }, grid: { color: 'rgba(18,18,18,0.15)' } },
+              y: { ticks: { color: '#1c1b1b' }, grid: { color: 'rgba(18,18,18,0.15)' } }
             }
           }
         });
@@ -346,18 +386,19 @@ function initAdminAnalytics() {
             datasets: [{
               label: 'Peak Check-Ins & Activity',
               data: counts.length ? counts : [5, 14, 8, 22, 11],
-              borderColor: '#3b82f6',
-              backgroundColor: 'rgba(59, 130, 246, 0.15)',
+              borderColor: '#2850ce',
+              backgroundColor: 'rgba(40, 80, 206, 0.15)',
+              borderWidth: 3,
               fill: true,
-              tension: 0.35
+              tension: 0
             }]
           },
           options: {
             responsive: true,
-            plugins: { legend: { labels: { color: '#9ca3af' } } },
+            plugins: { legend: { labels: { color: '#1c1b1b', font: { family: 'Outfit', weight: 700 } } } },
             scales: {
-              x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-              y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+              x: { ticks: { color: '#1c1b1b' }, grid: { color: 'rgba(18,18,18,0.15)' } },
+              y: { ticks: { color: '#1c1b1b' }, grid: { color: 'rgba(18,18,18,0.15)' } }
             }
           }
         });
@@ -374,13 +415,14 @@ function initAdminAnalytics() {
             labels: labels.length ? labels : ['0% Band', '5% Band', '10% Band', '15% Band', '20% Band'],
             datasets: [{
               data: counts.length ? counts : [1, 2, 3, 1, 1],
-              backgroundColor: ['#6b7280', '#3b82f6', '#8b5cf6', '#f59e0b', '#10b981'],
-              borderWidth: 0
+              backgroundColor: ['#1c1b1b', '#2850ce', '#d2a600', '#755b00', '#a9000e'],
+              borderColor: '#121212',
+              borderWidth: 2
             }]
           },
           options: {
             responsive: true,
-            plugins: { legend: { labels: { color: '#9ca3af' } } }
+            plugins: { legend: { labels: { color: '#1c1b1b', font: { family: 'Outfit', weight: 700 } } } }
           }
         });
       }
