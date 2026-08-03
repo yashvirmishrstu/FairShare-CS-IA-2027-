@@ -172,4 +172,4 @@ This project is part of an IB Computer Science Internal Assessment.
 
 ## Author
 
-Yashvir Mishra - CS IA 2027
+Yashvir Mishr - CS IA 2027
