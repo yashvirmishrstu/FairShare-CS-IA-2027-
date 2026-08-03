@@ -79,12 +79,15 @@
     </form>
 
     {% if guests %}
-      <div style="margin-top: 1rem; max-height: 90px; overflow-y: auto; font-size: 0.8rem;">
-        <span style="color: var(--text-dim); font-weight: 600;">Active Guest Passes:</span>
+      <div style="margin-top: 1rem; max-height: 170px; overflow-y: auto; font-size: 0.8rem;">
+        <span style="color: var(--text-dim); font-weight: 600;">Guest Passes — show the QR to your guest:</span>
         {% for g in guests[:3] %}
-          <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-glass); padding: 0.2rem 0;">
-            <span>{{ g.guest_name }}</span>
-            <code style="color: var(--accent-amber);">{{ g.guest_code }}</code>
+          <div style="display: flex; align-items: center; gap: 0.6rem; border-bottom: 1px dashed var(--border-glass); padding: 0.4rem 0;">
+            <div class="guest-pass-qr"><div data-qr="{{ g.guest_code }}" data-qr-width="52"></div></div>
+            <div style="flex: 1;">
+              <p style="font-weight: 600;">{{ g.guest_name }}</p>
+              <code style="color: var(--accent-amber); font-size: 0.72rem;">{{ g.guest_code }}</code>
+            </div>
           </div>
         {% endfor %}
       </div>

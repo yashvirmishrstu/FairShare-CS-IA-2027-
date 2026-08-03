@@ -41,6 +41,31 @@ def test_facility_checkin_checkout_duration():
     duration = FacilityTracker.check_out(checkin_id)
     assert duration >= 1
 
+def test_guest_facility_checkin_checkout_logs_on_guest_ledger():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members LIMIT 1")
+    host_id = cursor.fetchone()['id']
+    conn.close()
+
+    guest_res = GuestManager.create_guest_id(host_id, "Fiona Visitor")
+    guest_id = guest_res['id']
+
+    # Guest checks into a facility linked to their host member
+    checkin_id = FacilityTracker.guest_check_in(guest_id, host_id, "Swimming Pool & Spa")
+    assert checkin_id is not None
+    duration = FacilityTracker.check_out(checkin_id)
+    assert duration >= 1
+
+    # Guest session lands on the guest ledger, NOT the host member's activity log
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM guest_activities WHERE guest_id = ? AND activity_type = 'facility'", (guest_id,))
+    assert cursor.fetchone()[0] == 1
+    cursor.execute("SELECT COUNT(*) FROM activities WHERE member_id = ? AND service_name LIKE 'Facility Use%'", (host_id,))
+    assert cursor.fetchone()[0] == 0
+    conn.close()
+
 def test_guest_creation_and_spending():
     conn = get_db()
     cursor = conn.cursor()

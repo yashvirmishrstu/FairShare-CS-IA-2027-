@@ -2,6 +2,7 @@ import pytest
 import os
 from main import app
 from database import init_db, get_db
+from models import EngagementEngine
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -67,6 +68,85 @@ def test_member_scan_admin_redirects_not_crash(client):
     response = client.get('/member/scan', follow_redirects=True)
     assert response.status_code == 200
     assert b'Member profile not found' in response.data
+
+def test_guest_dashboard_requires_signin(client):
+    response = client.get('/guest/dashboard', follow_redirects=True)
+    assert b'Guest Day Pass Sign-In' in response.data
+
+def test_guest_day_pass_login_and_tracking(client):
+    # Alice creates a guest pass for her guest
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    client.post('/member/guest/create', data={'guest_name': 'Diana Day'}, follow_redirects=True)
+    client.get('/logout')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT g.guest_code, g.id, g.host_member_id FROM guest_ids g
+        JOIN members m ON g.host_member_id = m.id
+        WHERE m.full_name = 'Alice Johnson' ORDER BY g.id DESC LIMIT 1
+    ''')
+    guest = cursor.fetchone()
+    conn.close()
+    guest_code = guest['guest_code']
+
+    # Sign-in page renders
+    response = client.get('/guest')
+    assert response.status_code == 200
+    assert b'Guest Day Pass Sign-In' in response.data
+
+    # Invalid code rejected
+    response = client.post('/guest', data={'guest_code': 'GST-NOPE'}, follow_redirects=True)
+    assert b'Invalid Guest Pass Code' in response.data
+
+    # Valid code -> guest dashboard linked to host member
+    response = client.post('/guest', data={'guest_code': guest_code}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Diana Day' in response.data
+    assert b'Hosted by' in response.data
+    assert b'Alice Johnson' in response.data
+
+    # Guest scans facility barcode: check in then check out
+    response = client.post('/guest/scan', data={'facility_code': 'FAC-101'}, follow_redirects=True)
+    assert b'Checked in to Club Fitness' in response.data
+    response = client.post('/guest/scan', data={'facility_code': 'FAC-101'}, follow_redirects=True)
+    assert b'Checked out of Club Fitness' in response.data
+
+    # Guest records a purchase -> credited to host member
+    response = client.post('/guest/spending', data={'service_name': 'Bistro Lunch', 'amount': '25.50'}, follow_redirects=True)
+    assert b'credited to your host' in response.data
+
+    # Host engagement score now reflects the guest's spending
+    summary = EngagementEngine.calculate_engagement_score(guest['host_member_id'])
+    assert summary['guest_spending'] >= 25.50
+
+    # Guest ledger holds both facility + purchase rows
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM guest_activities WHERE guest_id = ?", (guest['id'],))
+    assert cursor.fetchone()[0] >= 2
+    conn.close()
+
+def test_guest_day_pass_expires_next_day(client):
+    # Create pass and sign in as the guest
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    client.post('/member/guest/create', data={'guest_name': 'Eve Expire'}, follow_redirects=True)
+    client.get('/logout')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT guest_code FROM guest_ids WHERE guest_name = 'Eve Expire' ORDER BY id DESC LIMIT 1")
+    guest_code = cursor.fetchone()['guest_code']
+    conn.close()
+    client.post('/guest', data={'guest_code': guest_code}, follow_redirects=True)
+
+    # Age the session to yesterday -> dashboard must bounce back to sign-in
+    with client.session_transaction() as sess:
+        sess['guest_login_date'] = '2000-01-01'
+
+    response = client.get('/guest/dashboard', follow_redirects=True)
+    assert b'day pass has expired' in response.data
+    assert b'Guest Day Pass Sign-In' in response.data
 
 def test_member_scan_checkin_checkout_flow(client):
     client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)

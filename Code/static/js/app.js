@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initClientValidation();
   initBarcodeAndQRCodes();
   initFacilityScanner();
+  initGuestLogin();
   initAdminAnalytics();
 });
 
@@ -82,11 +83,12 @@ function initFacilityScanner() {
   const input = document.getElementById('scanner-input');
   if (!form) return;
 
-  // Guard against rapid double-scans (twitchy scanners / fast double-clicks)
+  // Guard against rapid double-scans (twitchy scanners / fast double-clicks).
+  // NOTE: the scan input must NOT be disabled — disabled controls are excluded
+  // from form data, which would strip the scanned code before submission.
   form.addEventListener('submit', () => {
     form.dataset.submitting = '1';
     document.querySelectorAll('[data-demo-code]').forEach(b => { b.disabled = true; });
-    if (input) input.disabled = true;
   });
 
   // Keep the scan input focused for rapid successive scans
@@ -122,28 +124,98 @@ function submitFacilityScan(code) {
   if (!form || form.dataset.submitting === '1') return;
   form.dataset.submitting = '1';
   document.querySelectorAll('[data-demo-code]').forEach(b => { b.disabled = true; });
-  if (input) { input.value = code; input.disabled = true; }
+  if (input) input.value = code;
   form.requestSubmit();
   // Safety reset in case navigation stalls
   setTimeout(() => { form.dataset.submitting = '0'; }, 1500);
 }
 
-// Live elapsed timer for an active facility session
+// Live elapsed timers for active facility sessions (one or many)
 function initSessionTimer() {
-  const el = document.getElementById('session-timer');
-  if (!el) return;
-  const start = new Date((el.getAttribute('data-start') || '').replace(' ', 'T'));
-  if (isNaN(start.getTime())) { el.textContent = '—'; return; }
+  const timers = document.querySelectorAll('.session-timer[data-start]');
+  if (!timers.length) return;
 
   const render = () => {
-    const total = Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000));
-    const h = Math.floor(total / 3600);
-    const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
-    const s = String(total % 60).padStart(2, '0');
-    el.textContent = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+    timers.forEach(el => {
+      const start = new Date((el.getAttribute('data-start') || '').replace(' ', 'T'));
+      if (isNaN(start.getTime())) { el.textContent = '—'; return; }
+      const total = Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000));
+      const h = Math.floor(total / 3600);
+      const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+      const s = String(total % 60).padStart(2, '0');
+      el.textContent = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+    });
   };
   render();
   setInterval(render, 1000);
+}
+
+// Guest day-pass sign-in: scan the Guest Pass QR code or enter the code manually
+function initGuestLogin() {
+  const form = document.getElementById('guest-login-form');
+  if (!form) return;
+
+  const toggleBtn = document.getElementById('guest-camera-toggle');
+  const viewport = document.getElementById('guest-camera-viewport');
+  const toast = document.getElementById('guest-scan-toast');
+  const labelOn = toggleBtn ? (toggleBtn.getAttribute('data-label-on') || 'Scan QR Code') : 'Scan QR Code';
+  let scanner = null;
+
+  const showToast = (msg) => {
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.hidden = false;
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => { toast.hidden = true; }, 4500);
+  };
+
+  if (toggleBtn && viewport) {
+    toggleBtn.addEventListener('click', async () => {
+      if (scanner) {
+        try { await scanner.stop(); } catch (e) {}
+        scanner = null;
+        viewport.style.display = 'none';
+        toggleBtn.textContent = labelOn;
+        return;
+      }
+
+      if (typeof Html5Qrcode === 'undefined') {
+        showToast('Camera scanning library could not be loaded. Enter your pass code manually.');
+        return;
+      }
+
+      viewport.style.display = 'block';
+      scanner = new Html5Qrcode('guest-camera-viewport');
+      try {
+        await scanner.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          (decodedText) => {
+            playScanBeep(660, 0.1);
+            submitGuestCode(decodedText.trim().toUpperCase());
+          },
+          () => {}
+        );
+        toggleBtn.textContent = 'Stop Camera';
+      } catch (err) {
+        showToast('Camera is unavailable or permission was denied. Enter your pass code manually.');
+        viewport.style.display = 'none';
+        scanner = null;
+        toggleBtn.textContent = labelOn;
+      }
+    });
+
+    window.addEventListener('beforeunload', () => {
+      if (scanner) scanner.stop().catch(() => {});
+    });
+  }
+
+  function submitGuestCode(code) {
+    const input = document.getElementById('guest-code-input');
+    if (input) input.value = code;
+    playScanBeep(660, 0.1);
+    form.requestSubmit();
+  }
 }
 
 // Optional webcam QR/barcode scanning via html5-qrcode (graceful fallback)

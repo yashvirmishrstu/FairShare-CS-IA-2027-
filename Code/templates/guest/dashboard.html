@@ -118,4 +118,73 @@
       <form action="{{ url_for('guest_spending') }}" method="POST">
         <div class="form-group">
           <label class="form-label">Facility Service Used *</label>
-          <input type="text" name="service_name" class="form-control" placeholder="e.g. Pro Shop / Re
+          <input type="text" name="service_name" class="form-control" placeholder="e.g. Pro Shop / Restaurant Dining" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Transaction Amount ($) *</label>
+          <input type="number" step="0.01" min="0" name="amount" class="form-control" placeholder="0.00" data-non-negative required>
+        </div>
+        <button type="submit" class="btn btn-emerald" style="width: 100%;">Record Purchase &rarr;</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>My Day Activity</h3>
+      <div class="table-container" style="margin-top: 1rem; max-height: 280px; overflow-y: auto;">
+        <table class="table">
+          <thead>
+            <tr><th>Type</th><th>Details</th><th>Value</th></tr>
+          </thead>
+          <tbody>
+            {% for a in activity %}
+              <tr>
+                <td>
+                  {% if a.activity_type == 'purchase' %}
+                    <span class="badge badge-emerald">Purchase</span>
+                  {% else %}
+                    <span class="badge badge-blue">Facility</span>
+                  {% endif %}
+                </td>
+                <td>{{ a.service_name }}</td>
+                <td>${{ "%.2f"|format(a.transaction_value) }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="3" style="text-align:center; color: var(--text-dim);">No activity recorded yet today.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Facility Sessions -->
+<div class="card">
+  <h3>Recent Facility Sessions</h3>
+  <div class="table-container" style="margin-top: 1rem;">
+    <table class="table">
+      <thead>
+        <tr><th>Facility</th><th>Check In</th><th>Check Out</th><th>Duration</th></tr>
+      </thead>
+      <tbody>
+        {% for s in recent_sessions %}
+          <tr>
+            <td><strong>{{ s.facility_name }}</strong></td>
+            <td>{{ s.check_in_time }}</td>
+            <td>{{ s.check_out_time or '—' }}</td>
+            <td>
+              {% if s.duration_minutes > 0 %}
+                <span class="badge badge-emerald">{{ s.duration_minutes }} mins</span>
+              {% else %}
+                <span class="badge badge-amber">Active</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" style="text-align:center; color: var(--text-dim);">No facility sessions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

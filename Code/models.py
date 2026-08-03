@@ -259,6 +259,7 @@ class GuestManager:
             INSERT INTO guest_ids (guest_code, guest_name, host_member_id)
             VALUES (?, ?, ?)
         ''', (guest_code, guest_name, host_member_id))
+        guest_id = cursor.lastrowid
         
         # Log referral for host member
         cursor.execute('''
@@ -267,7 +268,6 @@ class GuestManager:
         ''', (host_member_id, f"Guest Pass Generated for {guest_name} ({guest_code})"))
 
         conn.commit()
-        guest_id = cursor.lastrowid
         conn.close()
         return {'id': guest_id, 'guest_code': guest_code, 'guest_name': guest_name}
 

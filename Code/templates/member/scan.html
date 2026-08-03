@@ -32,7 +32,7 @@
             <p style="font-weight: 700; color: #6ee7b7;">{{ active_checkin.facility_name }}</p>
             <p style="color: var(--text-muted); font-size: 0.8rem;">
               Started {{ active_checkin.check_in_time[11:16] }} · Elapsed
-              <strong id="session-timer" data-start="{{ active_checkin.check_in_time }}">0:00</strong>
+              <strong id="session-timer" class="session-timer" data-start="{{ active_checkin.check_in_time }}">0:00</strong>
             </p>
           </div>
         </div>

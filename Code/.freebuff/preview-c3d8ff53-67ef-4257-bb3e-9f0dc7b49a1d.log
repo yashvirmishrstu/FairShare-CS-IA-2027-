@@ -1,0 +1,45 @@
+ * Serving Flask app 'main'
+ * Debug mode: on
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 415-948-325
+127.0.0.1 - - [03/Aug/2026 09:59:31] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 09:59:55] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 09:59:55] "GET / HTTP/1.1" 302 -
+127.0.0.1 - - [03/Aug/2026 09:59:55] "GET /member/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 09:59:55] "GET /static/css/styles.css?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 09:59:55] "GET /static/js/app.js?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:02] "GET /member/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:02] "GET /static/css/styles.css?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:02] "GET /static/js/app.js?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:28] "POST /member/guest/create HTTP/1.1" 302 -
+127.0.0.1 - - [03/Aug/2026 10:00:28] "GET /member/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:28] "GET /static/css/styles.css?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:28] "GET /static/js/app.js?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:42] "GET /logout HTTP/1.1" 302 -
+127.0.0.1 - - [03/Aug/2026 10:00:42] "GET /login HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:42] "GET /static/css/styles.css?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:42] "GET /static/js/app.js?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:48] "GET /guest HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:48] "GET /static/css/styles.css?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:00:48] "GET /static/js/app.js?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:01:08] "POST /guest HTTP/1.1" 302 -
+127.0.0.1 - - [03/Aug/2026 10:01:08] "GET /guest/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:01:08] "GET /static/css/styles.css?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:01:08] "GET /static/js/app.js?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:01:22] "POST /guest/scan HTTP/1.1" 302 -
+127.0.0.1 - - [03/Aug/2026 10:01:22] "GET /guest/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:01:22] "GET /static/css/styles.css?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:01:22] "GET /static/js/app.js?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:02:45] "GET /guest/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:02:45] "GET /static/css/styles.css?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:02:45] "GET /static/js/app.js?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:03:04] "POST /guest/scan HTTP/1.1" 302 -
+127.0.0.1 - - [03/Aug/2026 10:03:04] "GET /guest/dashboard HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:03:04] "GET /static/css/styles.css?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:03:04] "GET /static/js/app.js?v=2 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:03:37] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [03/Aug/2026 10:04:11] "GET / HTTP/1.1" 200 -

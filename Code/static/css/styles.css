@@ -558,6 +558,15 @@ footer {
   flex-shrink: 0;
 }
 
+/* Guest pass QR chip (member dashboard) */
+.guest-pass-qr {
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 0.25rem;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
 /* Camera viewport */
 .camera-viewport {
   margin-top: 0.9rem;

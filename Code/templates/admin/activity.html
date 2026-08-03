@@ -134,7 +134,7 @@
         <tbody>
           {% for chk in checkins %}
             <tr>
-              <td><strong>{{ chk.full_name }}</strong><br><code style="font-size: 0.75rem;">{{ chk.member_code }}</code></td>
+              <td><strong>{{ chk.full_name }}</strong><br><code style="font-size: 0.75rem;">{{ chk.member_code }}</code>{% if chk.guest_name %} <span class="badge badge-purple">Guest: {{ chk.guest_name }}</span>{% endif %}</td>
               <td>{{ chk.facility_name }}</td>
               <td>{{ chk.check_in_time }}</td>
               <td>{{ chk.check_out_time or '—' }}</td>
