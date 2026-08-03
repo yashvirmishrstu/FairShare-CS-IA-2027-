@@ -49,3 +49,4 @@ class Config:
     DEFAULT_PROFIT_POOL = 10000.00   # $10,000 reward pool funding the coupon marketplace
     DEFAULT_POINTS_VALUE_DOLLARS = 0.50  # each point is worth $0.50 against the yearly fee
     DEFAULT_YEARLY_FEE = 1200.00     # standard yearly club membership fee
+    DEFAULT_COUPON_VALID_DAYS = 30   # a claimed coupon must be redeemed within 30 days

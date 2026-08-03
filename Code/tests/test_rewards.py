@@ -713,3 +713,197 @@ def test_concurrent_fee_credits_never_over_credit():
     ledger = MarketplaceManager.get_point_transactions(alice_id)
     total_spent = sum(-t['points_delta'] for t in ledger if t['points_delta'] < 0)
     assert total_spent <= balance
+
+
+def _claim_for(member_id):
+    """Claim the cheapest active coupon and return the issued coupon code."""
+    coupons = MarketplaceManager.get_active_coupons()
+    assert coupons, 'expected seeded coupons'
+    cheapest = min(coupons, key=lambda c: c['cost_points'])
+    result = MarketplaceManager.claim_coupon(member_id, cheapest['id'])
+    assert result['ok'] is True, result['message']
+    return result['coupon_code'], cheapest['id']
+
+
+def test_use_coupon_redeems_active_coupon_once():
+    """Redeeming an active coupon flips it to 'used', stamps used_at, and
+    refuses any second redemption of the same code."""
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+
+    code, _coupon_id = _claim_for(alice_id)
+
+    result = MarketplaceManager.use_coupon(code, alice_id)
+    assert result['ok'] is True
+    assert 'redeemed' in result['message'].lower()
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT status, used_at FROM member_coupons WHERE coupon_code = ?", (code,))
+    row = cursor.fetchone()
+    conn.close()
+    assert row['status'] == 'used'
+    assert row['used_at'] is not None
+
+    # Second redemption of the same code is rejected and changes nothing.
+    again = MarketplaceManager.use_coupon(code, alice_id)
+    assert again['ok'] is False
+    assert 'already been used' in again['message']
+
+    # The member's coupon list still shows the row (now annotated as used).
+    claimed = MarketplaceManager.get_member_coupons(alice_id)
+    assert any(c['coupon_code'] == code and c['status'] == 'used' for c in claimed)
+
+
+def test_use_coupon_rejects_unknown_code():
+    """A code that was never issued is rejected with a clear message."""
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+
+    result = MarketplaceManager.use_coupon('CPN-DEADBEEF', alice_id)
+    assert result['ok'] is False
+    assert 'not found' in result['message']
+
+
+def test_use_coupon_rejects_foreign_member_code():
+    """Alice cannot redeem a coupon code that belongs to Bob."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Bob Smith'")
+    bob_id = cursor.fetchone()['id']
+    coupon_id = MarketplaceManager.get_active_coupons()[0]['id']
+    # Insert Bob's coupon row directly (Bob's balance is below the cheapest
+    # catalog price, but the ownership guard must not depend on that).
+    cursor.execute('''
+        INSERT INTO member_coupons (member_id, coupon_id, coupon_code, points_spent, status)
+        VALUES (?, ?, ?, 40.0, 'active')
+    ''', (bob_id, coupon_id, 'CPN-FOREIGN1'))
+    conn.commit()
+    conn.close()
+
+    code = 'CPN-FOREIGN1'
+
+    result = MarketplaceManager.use_coupon(code, alice_id)
+    assert result['ok'] is False
+    assert 'different member' in result['message']
+
+    # Bob can still redeem his own coupon afterwards (untouched by the attempt).
+    result = MarketplaceManager.use_coupon(code, bob_id)
+    assert result['ok'] is True
+
+
+def test_use_coupon_rejects_expired_coupon():
+    """A claimed coupon past its validity window cannot be redeemed — the
+    row stays 'active' but is refused by the expiry check."""
+    from datetime import datetime, timedelta
+
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+
+    code, _ = _claim_for(alice_id)
+
+    # Backdate the claim beyond the validity window.
+    old = (datetime.now() - timedelta(days=MarketplaceManager.coupon_valid_days() + 1)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE member_coupons SET claimed_at = ? WHERE coupon_code = ?", (old, code))
+    conn.commit()
+    conn.close()
+
+    assert MarketplaceManager.is_coupon_expired(old) is True
+
+    result = MarketplaceManager.use_coupon(code, alice_id)
+    assert result['ok'] is False
+    assert 'expired' in result['message']
+
+    # The row was NOT flipped to used — it simply cannot be redeemed.
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT status FROM member_coupons WHERE coupon_code = ?", (code,))
+    assert cursor.fetchone()['status'] == 'active'
+    conn.close()
+
+
+def test_coupon_expiry_helpers():
+    """coupon_expires_at / is_coupon_expired compute the validity window,
+    and unparseable timestamps degrade to a safe (not-expired) default."""
+    from datetime import datetime, timedelta
+
+    now = datetime.now()
+    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    expires = MarketplaceManager.coupon_expires_at(now_str)
+    assert expires is not None
+    # coupon_expires_at truncates to whole seconds, so the remaining window is
+    # 30 days minus the microseconds fraction of `now` — assert a tolerance.
+    elapsed = expires - now
+    assert timedelta(days=MarketplaceManager.coupon_valid_days() - 1) < elapsed <= timedelta(days=MarketplaceManager.coupon_valid_days())
+    assert MarketplaceManager.is_coupon_expired(now_str) is False
+
+    # Clear-cut boundaries: one day inside the window is still valid, one
+    # day past it is expired. (The exact 30-day edge is sub-second racy —
+    # claimed_at truncates to seconds while datetime.now() keeps microseconds
+    # — so the test deliberately stays a full day away from it.)
+    just_before = (now - timedelta(days=MarketplaceManager.coupon_valid_days() - 1)).strftime("%Y-%m-%d %H:%M:%S")
+    assert MarketplaceManager.is_coupon_expired(just_before) is False
+
+    just_after = (now - timedelta(days=MarketplaceManager.coupon_valid_days() + 1)).strftime("%Y-%m-%d %H:%M:%S")
+    assert MarketplaceManager.is_coupon_expired(just_after) is True
+
+    # Defensive default: garbage timestamps never void a coupon.
+    assert MarketplaceManager.coupon_expires_at(None) is None
+    assert MarketplaceManager.is_coupon_expired(None) is False
+    assert MarketplaceManager.is_coupon_expired('not-a-date') is False
+
+
+def test_member_coupons_annotated_with_expiry():
+    """get_member_coupons enriches each row with expires_at_date / expired so
+    the UI can show remaining validity."""
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+
+    code, _ = _claim_for(alice_id)
+    claimed = MarketplaceManager.get_member_coupons(alice_id)
+    row = next(c for c in claimed if c['coupon_code'] == code)
+    assert row['expired'] is False
+    assert row['expires_at_date'] is not None
+    assert row['expires_at'] is not None
+
+
+def test_concurrent_coupon_redeems_never_double_use():
+    """Two simultaneous redemptions of the same coupon code: exactly one
+    succeeds because the active->used flip is atomic. The coupon can never
+    be redeemed twice, even under a race."""
+    import threading
+
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+
+    code, _ = _claim_for(alice_id)
+
+    results = []
+    barrier = threading.Barrier(2)
+
+    def redeem():
+        barrier.wait()  # maximize overlap so both hit the UPDATE together
+        results.append(MarketplaceManager.use_coupon(code, alice_id))
+
+    threads = [threading.Thread(target=redeem) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    ok_count = sum(1 for r in results if r['ok'])
+    assert ok_count == 1, f'exactly one redemption should succeed, got {results}'
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT status FROM member_coupons WHERE coupon_code = ?", (code,))
+    assert cursor.fetchone()['status'] == 'used'
+    conn.close()
+
+    # And it stays used — a third attempt is also refused.
+    final = MarketplaceManager.use_coupon(code, alice_id)
+    assert final['ok'] is False

@@ -24,6 +24,7 @@
     error messages follow a consistent pattern (defensive programming).
 """
 import functools
+import math
 import uuid
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, session, Response, jsonify
@@ -183,7 +184,7 @@ def guest_quick():
             flash('Please scan or enter your Guest Pass Code.', 'warning')
         elif not service_name:
             flash('Please describe the facility service used.', 'warning')
-        elif amount is None:
+        elif amount is None or not math.isfinite(amount):
             flash('Please enter a valid transaction amount.', 'warning')
         elif amount < 0:
             flash('Transaction amount cannot be negative.', 'danger')
@@ -487,6 +488,11 @@ def member_activity():
     cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
     member = cursor.fetchone()
 
+    if not member:
+        conn.close()
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
     # Retrieve all member activities (read-only view)
     cursor.execute('''
         SELECT * FROM activities WHERE member_id = ? ORDER BY created_at DESC
@@ -586,7 +592,7 @@ def admin_receipt_issue():
 
     if not service_name:
         flash('Please describe the service on the receipt.', 'warning')
-    elif amount <= 0:
+    elif not math.isfinite(amount) or amount <= 0:
         flash('Receipt amount must be greater than zero.', 'danger')
     else:
         receipt = ReceiptManager.issue_receipt(service_name, amount)
@@ -699,6 +705,14 @@ def admin_checkin():
     except (TypeError, ValueError):
         flash('Invalid member ID.', 'danger')
         return redirect(url_for('admin_activity'))
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE id = ?", (member_id,))
+    if not cursor.fetchone():
+        conn.close()
+        flash('Member not found.', 'danger')
+        return redirect(url_for('admin_activity'))
+    conn.close()
     FacilityTracker.check_in(member_id, facility_name)
     flash(f'Member checked in to {facility_name}!', 'success')
     return redirect(url_for('admin_activity'))
@@ -725,6 +739,11 @@ def member_guest_create():
     cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
     member = cursor.fetchone()
 
+    if not member:
+        conn.close()
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
     guest_name = request.form.get('guest_name', '').strip()
     if not guest_name:
         flash('Guest name is required.', 'danger')
@@ -748,7 +767,7 @@ def guest_spending():
     except ValueError:
         amount = -1.0
 
-    if amount < 0:
+    if not math.isfinite(amount) or amount < 0:
         flash('Transaction amount cannot be negative.', 'danger')
         return redirect(url_for('guest_dashboard'))
 
@@ -776,6 +795,11 @@ def member_rewards():
     cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
     member = cursor.fetchone()
 
+    if not member:
+        conn.close()
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
     if request.method == 'POST':
         # Redeem reward action
         cursor.execute("UPDATE rewards SET status = 'redeemed' WHERE member_id = ? AND status = 'active'", (member['id'],))
@@ -788,7 +812,13 @@ def member_rewards():
         rewards = EngagementEngine.recalculate_all(force=True).get(member['id'])
         flash('Voucher code generated & verified!', 'success')
     else:
-        # Rewards view — lazily materializes only when a scoring write happened
+        # Rewards view — lazily materializes only when a scoring write happened.
+        # On a brand-new database no reward row exists yet, so materialize the
+        # member's voucher once to keep its redemption code stable across
+        # reloads (otherwise a fresh FS-RED code would be minted every read).
+        cursor.execute("SELECT id FROM rewards WHERE member_id = ? AND status = 'active'", (member['id'],))
+        if not cursor.fetchone():
+            EngagementEngine.recalculate_all(force=True)
         rewards = EngagementEngine.view_member_rewards(member['id'])
 
     conn.close()
@@ -987,15 +1017,20 @@ def admin_activity():
         # float() inside try/except (defensive programming) means malformed
         # input is caught and turned into a safe sentinel (-1.0) that fails
         # the validation below instead of crashing the server.
-        if transaction_value < 0:
+        if not math.isfinite(transaction_value) or transaction_value < 0:
             flash('Transaction value cannot be negative!', 'danger')
         else:
-            cursor.execute('''
-                INSERT INTO activities (member_id, activity_type, service_name, transaction_value)
-                VALUES (?, ?, ?, ?)
-            ''', (member_id, activity_type, service_name, transaction_value))
-            conn.commit()
-            flash('Admin entry logged successfully!', 'success')
+            # FK safety: only log activity for a member that actually exists
+            cursor.execute("SELECT id FROM members WHERE id = ?", (member_id,))
+            if not cursor.fetchone():
+                flash('Please select a valid member.', 'danger')
+            else:
+                cursor.execute('''
+                    INSERT INTO activities (member_id, activity_type, service_name, transaction_value)
+                    VALUES (?, ?, ?, ?)
+                ''', (member_id, activity_type, service_name, transaction_value))
+                conn.commit()
+                flash('Admin entry logged successfully!', 'success')
 
     cursor.execute('''
         SELECT a.*, m.full_name, m.member_code
@@ -1106,6 +1141,45 @@ def member_marketplace_fee():
         flash(result['message'], 'danger')
     return redirect(url_for('member_marketplace'))
 
+@app.route('/member/coupon/redeem', methods=['GET', 'POST'])
+@login_required
+def member_coupon_redeem():
+    """Coupon redemption desk: scan (or type) a claimed coupon's QR code to
+    redeem it for a single use. Coupons expire after the configured validity
+    window (Config.DEFAULT_COUPON_VALID_DAYS) and can never be redeemed twice.
+
+    IB HL CS: *state transition with validation* — a coupon moves
+    active -> used exactly once; the transition is guarded server-side by
+    MarketplaceManager.use_coupon (atomic UPDATE ... WHERE status='active'),
+    so concurrent scans cannot double-redeem a code.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+    conn.close()
+
+    if not member:
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        coupon_code = request.form.get('coupon_code', '').strip().upper()
+        if not coupon_code:
+            flash('No coupon code detected. Please scan the QR on your coupon.', 'warning')
+        else:
+            result = MarketplaceManager.use_coupon(coupon_code, member['id'])
+            if result['ok']:
+                flash(result['message'], 'success')
+            else:
+                flash(result['message'], 'danger')
+        return redirect(url_for('member_coupon_redeem'))
+
+    my_coupons = MarketplaceManager.get_member_coupons(member['id'])
+    return render_template('member/coupon_redeem.html', member=member,
+                           my_coupons=my_coupons,
+                           valid_days=MarketplaceManager.coupon_valid_days())
+
 @app.route('/admin/marketplace', methods=['GET', 'POST'])
 @admin_required
 def admin_marketplace():
@@ -1128,7 +1202,8 @@ def admin_marketplace():
 
             if not name or not description:
                 flash('Coupon name and description are required.', 'danger')
-            elif cost_points < 0 or value_amount < 0:
+            elif (not math.isfinite(cost_points) or not math.isfinite(value_amount)
+                  or cost_points < 0 or value_amount < 0):
                 flash('Coupon cost and value cannot be negative.', 'danger')
             else:
                 cursor.execute('''
@@ -1181,8 +1256,10 @@ def admin_settings():
             flash('Invalid numeric inputs for algorithm settings.', 'danger')
             return redirect(url_for('admin_settings'))
 
-        if visit_w < 0 or spend_w < 0 or referral_w < 0 or facility_w < 0 or loyalty_w < 0 or profit_pool < 0 or premium_mult < 0 or vip_mult < 0 or points_value < 0:
-            flash('Algorithm parameters, reward pool, and points value cannot be negative.', 'danger')
+        weights = [visit_w, spend_w, referral_w, facility_w, loyalty_w,
+                   profit_pool, premium_mult, vip_mult, points_value]
+        if any(not math.isfinite(w) for w in weights) or any(w < 0 for w in weights):
+            flash('Algorithm parameters, reward pool, and points value must be finite and non-negative.', 'danger')
             return redirect(url_for('admin_settings'))
 
         RewardSettings.update_settings(visit_w, spend_w, referral_w, facility_w,
