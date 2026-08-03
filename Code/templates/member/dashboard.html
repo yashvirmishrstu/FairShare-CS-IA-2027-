@@ -9,7 +9,7 @@
     <h1 style="font-size: 2.2rem;">Welcome back, {{ member.full_name }}!</h1>
     <p style="color: var(--text-muted); font-size: 0.95rem;">Member Code: <code style="color: var(--accent-cyan);">{{ member.member_code }}</code> | Joined: {{ member.join_date[:10] }}</p>
   </div>
-  <a href="{{ url_for('member_activity') }}" class="btn btn-primary">+ Log Activity / Check In</a>
+  <a href="{{ url_for('member_activity') }}" class="btn btn-primary">View My History</a>
 </div>
 
 <!-- Stat Cards -->
@@ -39,42 +39,32 @@
   </div>
 </div>
 
-<div class="grid grid-cols-3" style="gap: 1.5rem; margin-bottom: 2rem;">
-  <!-- Member ID Barcode Scan-In Card -->
-  <div class="card" style="text-align: center;">
-    <h3>Facility Digital Scan ID</h3>
-    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Present at entrance turnstiles or facility counters</p>
-    <div class="code-box">
-      <svg id="member-barcode" data-code="{{ member.member_code }}"></svg>
-    </div>
-  </div>
-
-  <!-- Facility Check-In Status & Action -->
+<div class="grid grid-cols-2" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Facility Barcode Scanner Card -->
   <div class="card">
-    <h3>Facility Check-In</h3>
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+      <h3>Facility Barcode Scanner</h3>
+      {% if active_checkin %}
+        <span class="badge badge-emerald">Session Active</span>
+      {% else %}
+        <span class="badge badge-blue">Ready to Scan</span>
+      {% endif %}
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.85rem;">Scan the barcode posted at a facility entrance to start your session timer. Scan it again to check out.</p>
+
     {% if active_checkin %}
       <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); padding: 1rem; border-radius: var(--radius-sm); margin-top: 1rem;">
-        <p style="font-weight: 700; color: #6ee7b7; font-size: 0.95rem;">Checked In: {{ active_checkin.facility_name }}</p>
-        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">Started at: {{ active_checkin.check_in_time[11:16] }}</p>
-        <form action="{{ url_for('member_checkout', checkin_id=active_checkin.id) }}" method="POST" style="margin-top: 0.85rem;">
-          <button type="submit" class="btn btn-emerald btn-sm" style="width: 100%;">Check Out & Calculate Duration</button>
-        </form>
+        <p style="font-weight: 700; color: #6ee7b7; font-size: 0.95rem;">{{ active_checkin.facility_name }}</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">Started at {{ active_checkin.check_in_time[11:16] }} — scan the same barcode again to check out.</p>
       </div>
     {% else %}
-      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.5rem; margin-bottom: 1rem;">Select a facility to check in and record duration:</p>
-      <form action="{{ url_for('member_checkin') }}" method="POST">
-        <div class="form-group">
-          <select name="facility_name" class="form-control">
-            <option value="Club Fitness & Gym">Club Fitness & Gym</option>
-            <option value="Tennis & Squash Courts">Tennis & Squash Courts</option>
-            <option value="Swimming Pool & Spa">Swimming Pool & Spa</option>
-            <option value="Bistro & Lounge">Bistro & Lounge</option>
-            <option value="Pro Golf Course">Pro Golf Course</option>
-          </select>
-        </div>
-        <button type="submit" class="btn btn-primary btn-sm" style="width: 100%;">Check In Now</button>
-      </form>
+      <div style="padding: 1.25rem 0; text-align: center;">
+        <p style="color: var(--text-dim); font-size: 0.85rem;">No active facility session.</p>
+        <p style="color: var(--text-dim); font-size: 0.8rem; margin-top: 0.35rem;">Scan a facility barcode to start your timer.</p>
+      </div>
     {% endif %}
+
+    <a href="{{ url_for('member_scan') }}" class="btn btn-primary btn-sm" style="width: 100%; margin-top: 1rem;">Open Barcode Scanner &rarr;</a>
   </div>
 
   <!-- Guest Pass Creation Card -->

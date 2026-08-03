@@ -380,26 +380,6 @@ a:hover {
 .alert-warning { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); color: #fde047; }
 .alert-info { background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.5); color: #93c5fd; }
 
-/* Barcode & QR Display Container */
-.code-box {
-  background: #ffffff;
-  padding: 1.25rem;
-  border-radius: var(--radius-sm);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.code-box span {
-  color: #1f2937;
-  font-family: monospace;
-  font-weight: 700;
-  font-size: 1.1rem;
-}
-
 /* Footer */
 footer {
   margin-top: auto;
@@ -408,4 +388,196 @@ footer {
   text-align: center;
   color: var(--text-dim);
   font-size: 0.85rem;
+}
+
+/* Facility Barcode Scanner */
+.scanner-form { margin-top: 1.25rem; }
+
+.scanner-frame {
+  position: relative;
+  background: rgba(11, 15, 25, 0.9);
+  border: 2px solid rgba(59, 130, 246, 0.55);
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12), inset 0 0 30px rgba(59, 130, 246, 0.06);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.scanner-frame:focus-within {
+  border-color: var(--accent-emerald);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.18), inset 0 0 30px rgba(16, 185, 129, 0.08);
+}
+
+.scanner-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e5ffe9;
+  font-family: 'Consolas', 'JetBrains Mono', monospace;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 0.9rem 0.5rem;
+  caret-color: var(--accent-emerald);
+}
+
+.scanner-input::placeholder { color: rgba(156, 163, 175, 0.55); letter-spacing: 0.12em; }
+
+/* Animated scan line */
+.scan-line {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #34d399, transparent);
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.8);
+  animation: scanSweep 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes scanSweep {
+  0% { top: 10%; opacity: 0; }
+  12% { opacity: 1; }
+  50% { top: 88%; opacity: 1; }
+  62% { opacity: 0; }
+  100% { top: 10%; opacity: 0; }
+}
+
+/* Scanner corner brackets */
+.scan-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--accent-emerald);
+  z-index: 2;
+}
+.scan-corner.tl { top: 6px; left: 6px; border-right: none; border-bottom: none; border-top-left-radius: 6px; }
+.scan-corner.tr { top: 6px; right: 6px; border-left: none; border-bottom: none; border-top-right-radius: 6px; }
+.scan-corner.bl { bottom: 6px; left: 6px; border-right: none; border-top: none; border-bottom-left-radius: 6px; }
+.scan-corner.br { bottom: 6px; right: 6px; border-left: none; border-top: none; border-bottom-right-radius: 6px; }
+
+/* Session status panels */
+.session-active {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.session-idle {
+  border: 1px dashed var(--border-glass);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  text-align: center;
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.pulse-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-emerald);
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  animation: pulseRing 1.6s ease-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+  70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+/* Facility barcode cards */
+.facility-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  max-height: 540px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.facility-scan-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.facility-scan-card:hover {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.2);
+}
+
+.facility-scan-card:active { transform: scale(0.98); }
+
+.facility-barcode-box {
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.facility-barcode-box svg { max-width: 130px; height: 38px; }
+
+.facility-code {
+  color: #1f2937;
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.facility-qr {
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 0.3rem;
+  flex-shrink: 0;
+}
+
+/* Camera viewport */
+.camera-viewport {
+  margin-top: 0.9rem;
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  min-height: 220px;
+  background: #000;
+}
+
+.camera-viewport video { width: 100%; }
+
+/* Scan toast */
+.scan-toast {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fde047;
 }

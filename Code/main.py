@@ -1,5 +1,6 @@
 import functools
 import uuid
+from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, session, Response, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -10,13 +11,28 @@ from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManag
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Facility Barcode Registry — every facility has a unique scannable barcode code.
+# Members scan the code posted at a facility entrance to start their session timer,
+# then scan the same code again to check out and log usage duration.
+FACILITIES = {
+    "FAC-101": "Club Fitness & Gym",
+    "FAC-102": "Tennis & Squash Courts",
+    "FAC-103": "Swimming Pool & Spa",
+    "FAC-104": "Bistro & Lounge",
+    "FAC-105": "Pro Golf Course",
+}
+
 # Ensure database tables exist on launch
 init_db()
 
 # HTTP Cache Control Header for Asset Optimization & Fast Load Times (<2-3s)
+# In debug mode nothing is cached so code/template/asset edits show up instantly during development.
 @app.after_request
 def add_header(response):
-    response.headers['Cache-Control'] = 'public, max-age=3600'
+    if app.debug:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    else:
+        response.headers['Cache-Control'] = 'public, max-age=3600'
     return response
 
 # Authorization Decorators
@@ -35,6 +51,20 @@ def admin_required(f):
         if 'user_id' not in session or session.get('role') != 'admin':
             flash('Unauthorized access! Administrator privileges required.', 'danger')
             return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def guest_required(f):
+    """Require an active guest day-pass session (expires at end of day)."""
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        guest_id = session.get('guest_id')
+        today = datetime.now().strftime('%Y-%m-%d')
+        if not guest_id or session.get('guest_login_date') != today:
+            session.pop('guest_id', None)
+            session.pop('guest_login_date', None)
+            flash('Your guest day pass has expired. Please sign in again.', 'warning')
+            return redirect(url_for('guest_portal'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -64,9 +94,119 @@ def index():
             return redirect(url_for('member_dashboard'))
     return render_template('index.html')
 
-@app.route('/guest')
+@app.route('/guest', methods=['GET', 'POST'])
 def guest_portal():
+    """Guest day-pass sign-in: scan the Guest Pass QR or enter its code.
+    The pass is linked to the member who created it, so all guest activity
+    is credited to that host member."""
+    # Already signed in for today? Go straight to the guest dashboard.
+    today = datetime.now().strftime('%Y-%m-%d')
+    if session.get('guest_id') and session.get('guest_login_date') == today:
+        return redirect(url_for('guest_dashboard'))
+
+    if request.method == 'POST':
+        guest_code = request.form.get('guest_code', '').strip().upper()
+        if not guest_code:
+            flash('Please scan or enter your Guest Pass Code.', 'warning')
+        else:
+            guest = GuestManager.get_guest_by_code(guest_code)
+            if not guest:
+                flash(f'Invalid Guest Pass Code "{guest_code}". Please try again.', 'danger')
+            else:
+                session['guest_id'] = guest['id']
+                session['guest_login_date'] = today
+                flash(f'Welcome, {guest["guest_name"]}! Your day pass is active and linked to your host member.', 'success')
+                return redirect(url_for('guest_dashboard'))
+
     return render_template('guest.html')
+
+@app.route('/guest/dashboard')
+@guest_required
+def guest_dashboard():
+    """Guest day portal: facility barcode scanner, purchases, and activity tracking."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM guest_ids WHERE id = ?", (session['guest_id'],))
+    guest = cursor.fetchone()
+
+    if not guest:
+        session.pop('guest_id', None)
+        session.pop('guest_login_date', None)
+        conn.close()
+        flash('Guest pass not found. Please sign in again.', 'danger')
+        return redirect(url_for('guest_portal'))
+
+    # Host member this guest is linked to
+    cursor.execute("SELECT full_name, member_code FROM members WHERE id = ?", (guest['host_member_id'],))
+    host = cursor.fetchone()
+
+    # Active facility session + recent completed sessions
+    cursor.execute("SELECT * FROM facility_checkins WHERE guest_id = ? AND status = 'active'", (guest['id'],))
+    active_checkin = cursor.fetchone()
+
+    cursor.execute('''
+        SELECT * FROM facility_checkins WHERE guest_id = ? AND status = 'completed'
+        ORDER BY check_in_time DESC LIMIT 8
+    ''', (guest['id'],))
+    recent_sessions = cursor.fetchall()
+
+    # Guest activity ledger + today's spending
+    cursor.execute('''
+        SELECT * FROM guest_activities WHERE guest_id = ? ORDER BY created_at DESC LIMIT 20
+    ''', (guest['id'],))
+    activity = cursor.fetchall()
+
+    cursor.execute('''
+        SELECT COALESCE(SUM(transaction_value), 0.0) FROM guest_activities
+        WHERE guest_id = ? AND activity_type = 'purchase' AND date(created_at) = date('now')
+    ''', (guest['id'],))
+    today_spending = cursor.fetchone()[0]
+
+    conn.close()
+
+    return render_template('guest/dashboard.html', guest=guest, host=host,
+                           active_checkin=active_checkin, recent_sessions=recent_sessions,
+                           activity=activity, today_spending=today_spending, facilities=FACILITIES)
+
+@app.route('/guest/scan', methods=['POST'])
+@guest_required
+def guest_scan():
+    """Facility barcode scanner for guests: first scan checks in, second checks out."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM guest_ids WHERE id = ?", (session['guest_id'],))
+    guest = cursor.fetchone()
+
+    facility_code = request.form.get('facility_code', '').strip().upper()
+    if not facility_code:
+        flash('No barcode detected. Please scan a facility barcode.', 'warning')
+    elif facility_code not in FACILITIES:
+        flash(f'Unknown facility barcode "{facility_code}". Please scan a valid facility code.', 'danger')
+    else:
+        facility_name = FACILITIES[facility_code]
+        cursor.execute("SELECT * FROM facility_checkins WHERE guest_id = ? AND status = 'active'", (guest['id'],))
+        active = cursor.fetchone()
+
+        if active:
+            if active['facility_name'] == facility_name:
+                duration = FacilityTracker.check_out(active['id'])
+                flash(f'Checked out of {facility_name}! Session duration: {duration} mins.', 'success')
+            else:
+                flash(f'You are currently checked into {active["facility_name"]}. Scan that facility again to check out first.', 'warning')
+        else:
+            FacilityTracker.guest_check_in(guest['id'], guest['host_member_id'], facility_name)
+            flash(f'Checked in to {facility_name}! Timer started. Scan again to check out.', 'success')
+
+    conn.close()
+    return redirect(url_for('guest_dashboard'))
+
+@app.route('/guest/logout', methods=['POST'])
+@guest_required
+def guest_logout():
+    session.pop('guest_id', None)
+    session.pop('guest_login_date', None)
+    flash('You have been signed out of your guest day pass. Have a great visit!', 'info')
+    return redirect(url_for('guest_portal'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -137,9 +277,9 @@ def member_dashboard():
     ''', (member['id'],))
     recent_activities = cursor.fetchall()
 
-    # Active facility checkins
+    # Active facility checkins (member-only sessions, excluding guest sessions)
     cursor.execute('''
-        SELECT * FROM facility_checkins WHERE member_id = ? AND status = 'active'
+        SELECT * FROM facility_checkins WHERE member_id = ? AND guest_id IS NULL AND status = 'active'
     ''', (member['id'],))
     active_checkin = cursor.fetchone()
 
@@ -152,7 +292,7 @@ def member_dashboard():
     return render_template('member/dashboard.html', member=member, rewards=rewards,
                            recent_activities=recent_activities, active_checkin=active_checkin, guests=guests)
 
-@app.route('/member/activity', methods=['GET', 'POST'])
+@app.route('/member/activity')
 @login_required
 def member_activity():
     conn = get_db()
@@ -160,46 +300,15 @@ def member_activity():
     cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
     member = cursor.fetchone()
 
-    if request.method == 'POST':
-        activity_type = request.form.get('activity_type')
-        service_name = request.form.get('service_name', '').strip()
-        try:
-            transaction_value = float(request.form.get('transaction_value', 0.0))
-        except ValueError:
-            transaction_value = -1.0
-
-        # Server-side Validation
-        if transaction_value < 0:
-            flash('Transaction value cannot be negative!', 'danger')
-            conn.close()
-            return redirect(url_for('member_activity'))
-
-        if not service_name:
-            flash('Service description is required.', 'danger')
-            conn.close()
-            return redirect(url_for('member_activity'))
-
-        cursor.execute('''
-            INSERT INTO activities (member_id, activity_type, service_name, transaction_value)
-            VALUES (?, ?, ?, ?)
-        ''', (member['id'], activity_type, service_name, transaction_value))
-
-        conn.commit()
-        # Recalculate rewards automatically
-        EngagementEngine.update_member_rewards(member['id'])
-        flash('Activity logged successfully!', 'success')
-        conn.close()
-        return redirect(url_for('member_activity'))
-
-    # Retrieve all member activities
+    # Retrieve all member activities (read-only view)
     cursor.execute('''
         SELECT * FROM activities WHERE member_id = ? ORDER BY created_at DESC
     ''', (member['id'],))
     activities = cursor.fetchall()
 
-    # Retrieve member facility checkin logs
+    # Retrieve member facility checkin logs (member-only sessions, excluding guest sessions)
     cursor.execute('''
-        SELECT * FROM facility_checkins WHERE member_id = ? ORDER BY check_in_time DESC
+        SELECT * FROM facility_checkins WHERE member_id = ? AND guest_id IS NULL ORDER BY check_in_time DESC
     ''', (member['id'],))
     checkins = cursor.fetchall()
 
@@ -207,29 +316,81 @@ def member_activity():
 
     return render_template('member/activity.html', activities=activities, checkins=checkins)
 
-@app.route('/member/checkin', methods=['POST'])
+@app.route('/member/scan', methods=['GET', 'POST'])
 @login_required
-def member_checkin():
+def member_scan():
+    """
+    Facility barcode scanner: scanning a facility's barcode checks the member in
+    and starts the session timer; scanning it again checks out and logs duration.
+    """
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    cursor.execute("SELECT * FROM members WHERE user_id = ?", (session['user_id'],))
     member = cursor.fetchone()
 
-    facility_name = request.form.get('facility_name', 'General Club House')
-    FacilityTracker.check_in(member['id'], facility_name)
-    flash(f'Checked in to {facility_name}!', 'success')
-    conn.close()
-    return redirect(url_for('member_dashboard'))
+    if not member:
+        conn.close()
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
 
-@app.route('/member/checkout/<int:checkin_id>', methods=['POST'])
-@login_required
-def member_checkout(checkin_id):
+    if request.method == 'POST':
+        facility_code = request.form.get('facility_code', '').strip().upper()
+
+        if not facility_code:
+            flash('No barcode detected. Please scan a facility barcode.', 'warning')
+        elif facility_code not in FACILITIES:
+            flash(f'Unknown facility barcode "{facility_code}". Please scan a valid facility code.', 'danger')
+        else:
+            facility_name = FACILITIES[facility_code]
+            cursor.execute("SELECT * FROM facility_checkins WHERE member_id = ? AND guest_id IS NULL AND status = 'active'", (member['id'],))
+            active = cursor.fetchone()
+
+            if active:
+                if active['facility_name'] == facility_name:
+                    duration = FacilityTracker.check_out(active['id'])
+                    flash(f'Checked out of {facility_name}! Session duration: {duration} mins.', 'success')
+                else:
+                    flash(f'You are currently checked into {active["facility_name"]}. Scan that facility again to check out first.', 'warning')
+            else:
+                FacilityTracker.check_in(member['id'], facility_name)
+                flash(f'Checked in to {facility_name}! Timer started. Scan again to check out.', 'success')
+
+        conn.close()
+        return redirect(url_for('member_scan'))
+
+    # Active session + recent completed sessions for the scanner page (member-only)
+    cursor.execute("SELECT * FROM facility_checkins WHERE member_id = ? AND guest_id IS NULL AND status = 'active'", (member['id'],))
+    active_checkin = cursor.fetchone()
+
+    cursor.execute('''
+        SELECT * FROM facility_checkins WHERE member_id = ? AND guest_id IS NULL AND status = 'completed'
+        ORDER BY check_in_time DESC LIMIT 8
+    ''', (member['id'],))
+    recent_sessions = cursor.fetchall()
+
+    conn.close()
+
+    return render_template('member/scan.html', facilities=FACILITIES,
+                           active_checkin=active_checkin, recent_sessions=recent_sessions)
+
+@app.route('/admin/checkin', methods=['POST'])
+@admin_required
+def admin_checkin():
+    member_id = request.form.get('member_id')
+    facility_name = request.form.get('facility_name', 'General Club House')
+    FacilityTracker.check_in(member_id, facility_name)
+    flash(f'Member checked in to {facility_name}!', 'success')
+    return redirect(url_for('admin_activity'))
+
+@app.route('/admin/checkout/<int:checkin_id>', methods=['POST'])
+@admin_required
+def admin_checkout(checkin_id):
     duration = FacilityTracker.check_out(checkin_id)
     if duration:
-        flash(f'Checked out! Duration logged: {duration} minutes.', 'info')
+        flash(f'Member checked out! Duration logged: {duration} minutes.', 'info')
     else:
         flash('Invalid check-out request.', 'danger')
-    return redirect(url_for('member_dashboard'))
+    return redirect(url_for('admin_activity'))
 
 @app.route('/member/guest/create', methods=['POST'])
 @login_required
@@ -252,8 +413,9 @@ def member_guest_create():
     return redirect(url_for('member_dashboard'))
 
 @app.route('/guest/spending', methods=['POST'])
+@guest_required
 def guest_spending():
-    guest_code = request.form.get('guest_code', '').strip().upper()
+    """Record a purchase against the signed-in guest — credited to their host member."""
     service_name = request.form.get('service_name', '').strip()
     try:
         amount = float(request.form.get('amount', 0.0))
@@ -262,15 +424,17 @@ def guest_spending():
 
     if amount < 0:
         flash('Transaction amount cannot be negative.', 'danger')
-        return redirect(url_for('index'))
+        return redirect(url_for('guest_dashboard'))
 
-    success = GuestManager.record_guest_spending(guest_code, service_name, amount)
-    if success:
-        flash(f'Guest purchase of ${amount:.2f} recorded for Pass {guest_code}!', 'success')
-    else:
-        flash('Invalid Guest Code entered.', 'danger')
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM guest_ids WHERE id = ?", (session['guest_id'],))
+    guest = cursor.fetchone()
+    conn.close()
 
-    return redirect(url_for('index'))
+    GuestManager.record_spending(guest['id'], service_name, amount)
+    flash(f'Purchase of ${amount:.2f} recorded — credited to your host member!', 'success')
+    return redirect(url_for('guest_dashboard'))
 
 @app.route('/member/rewards', methods=['GET', 'POST'])
 @login_required
@@ -458,8 +622,18 @@ def admin_activity():
     cursor.execute("SELECT id, full_name, member_code FROM members ORDER BY full_name")
     all_members = cursor.fetchall()
 
+    # Facility check-in records for club-side management (guest sessions show their guest name)
+    cursor.execute('''
+        SELECT fc.*, m.full_name, m.member_code, g.guest_name
+        FROM facility_checkins fc
+        JOIN members m ON fc.member_id = m.id
+        LEFT JOIN guest_ids g ON fc.guest_id = g.id
+        ORDER BY fc.check_in_time DESC
+    ''')
+    checkins = cursor.fetchall()
+
     conn.close()
-    return render_template('admin/activity.html', activities=activities, all_members=all_members)
+    return render_template('admin/activity.html', activities=activities, all_members=all_members, checkins=checkins, facilities=FACILITIES)
 
 @app.route('/admin/settings', methods=['GET', 'POST'])
 @admin_required

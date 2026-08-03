@@ -86,4 +86,81 @@
     </div>
   </div>
 </div>
+
+<!-- Facility Check-In / Check-Out Management -->
+<div class="grid grid-cols-3" style="gap: 1.5rem;">
+  <!-- Check-In Form -->
+  <div class="card" style="grid-column: span 1;">
+    <h3>Check In Member</h3>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Record a member's arrival at a facility.</p>
+    <form action="{{ url_for('admin_checkin') }}" method="POST" style="margin-top: 1rem;">
+      <div class="form-group">
+        <label class="form-label">Select Member</label>
+        <select name="member_id" class="form-control" required>
+          {% for m in all_members %}
+            <option value="{{ m.id }}">{{ m.full_name }} ({{ m.member_code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Facility</label>
+        <select name="facility_name" class="form-control">
+          {% for code, name in facilities.items() %}
+            <option value="{{ name }}">{{ name }} ({{ code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Check In Member</button>
+    </form>
+  </div>
+
+  <!-- Active Check-Ins & History -->
+  <div class="card" style="grid-column: span 2;">
+    <h3>Active Check-Ins &amp; Recent History</h3>
+    <div class="table-container" style="margin-top: 1rem;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Member</th>
+            <th>Facility</th>
+            <th>Check In</th>
+            <th>Check Out</th>
+            <th>Duration</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for chk in checkins %}
+            <tr>
+              <td><strong>{{ chk.full_name }}</strong><br><code style="font-size: 0.75rem;">{{ chk.member_code }}</code></td>
+              <td>{{ chk.facility_name }}</td>
+              <td>{{ chk.check_in_time }}</td>
+              <td>{{ chk.check_out_time or '—' }}</td>
+              <td>
+                {% if chk.status == 'completed' %}
+                  <span class="badge badge-emerald">{{ chk.duration_minutes }} mins</span>
+                {% else %}
+                  <span class="badge badge-amber">Active</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if chk.status == 'active' %}
+                  <form action="{{ url_for('admin_checkout', checkin_id=chk.id) }}" method="POST" style="display:inline;">
+                    <button type="submit" class="btn btn-emerald btn-sm">Check Out</button>
+                  </form>
+                {% else %}
+                  <span style="color: var(--text-dim); font-size: 0.8rem;">Done</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" style="text-align:center; color: var(--text-dim);">No facility check-in records.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 {% endblock %}

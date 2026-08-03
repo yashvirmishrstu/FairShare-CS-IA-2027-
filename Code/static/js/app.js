@@ -5,6 +5,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   initClientValidation();
   initBarcodeAndQRCodes();
+  initFacilityScanner();
   initAdminAnalytics();
 });
 
@@ -40,37 +41,185 @@ function initClientValidation() {
   });
 }
 
-// Render Member Barcode & QR Redemption Code
+// Render all Barcode & QR elements (facility barcodes, redemption QR)
 function initBarcodeAndQRCodes() {
-  const barcodeElem = document.getElementById('member-barcode');
-  if (barcodeElem && typeof JsBarcode === 'function') {
-    const code = barcodeElem.getAttribute('data-code');
-    if (code) {
-      JsBarcode('#member-barcode', code, {
+  if (typeof JsBarcode === 'function') {
+    document.querySelectorAll('[data-barcode]').forEach(elem => {
+      const code = elem.getAttribute('data-barcode');
+      if (!code) return;
+      JsBarcode(elem, code, {
         format: "CODE128",
         lineColor: "#111827",
-        width: 2,
-        height: 50,
-        displayValue: true
+        width: parseInt(elem.getAttribute('data-width') || '2', 10),
+        height: parseInt(elem.getAttribute('data-height') || '50', 10),
+        displayValue: elem.getAttribute('data-display') !== 'false',
+        margin: 4
       });
-    }
+    });
   }
 
-  const qrElem = document.getElementById('redemption-qr');
-  if (qrElem && typeof QRCode === 'function') {
-    const qrData = qrElem.getAttribute('data-qr');
-    if (qrData) {
-      qrElem.innerHTML = '';
-      new QRCode(qrElem, {
-        text: qrData,
-        width: 128,
-        height: 128,
-        colorDark : "#111827",
-        colorLight : "#ffffff",
-        correctLevel : QRCode.CorrectLevel.H
+  if (typeof QRCode === 'function') {
+    document.querySelectorAll('[data-qr]').forEach(elem => {
+      const data = elem.getAttribute('data-qr');
+      if (!data) return;
+      const size = parseInt(elem.getAttribute('data-qr-width') || '128', 10);
+      elem.innerHTML = '';
+      new QRCode(elem, {
+        text: data,
+        width: size,
+        height: size,
+        colorDark: "#111827",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.H
       });
-    }
+    });
   }
+}
+
+// Facility Barcode Scanner interactions (member/scan page)
+function initFacilityScanner() {
+  const form = document.getElementById('scanner-form');
+  const input = document.getElementById('scanner-input');
+  if (!form) return;
+
+  // Guard against rapid double-scans (twitchy scanners / fast double-clicks)
+  form.addEventListener('submit', () => {
+    form.dataset.submitting = '1';
+    document.querySelectorAll('[data-demo-code]').forEach(b => { b.disabled = true; });
+    if (input) input.disabled = true;
+  });
+
+  // Keep the scan input focused for rapid successive scans
+  const card = document.getElementById('scanner-card');
+  if (card) {
+    card.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && input) {
+        input.focus();
+      }
+    });
+  }
+
+  // Simulated scans (demo cards) — real USB scanners type into the input
+  document.querySelectorAll('[data-demo-code]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      playScanBeep(660, 0.1);
+      submitFacilityScan(btn.getAttribute('data-demo-code'));
+    });
+  });
+
+  const clearBtn = document.getElementById('clear-scanner');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => { if (input) { input.value = ''; input.focus(); } });
+  }
+
+  initSessionTimer();
+  initCameraScanner();
+}
+
+function submitFacilityScan(code) {
+  const input = document.getElementById('scanner-input');
+  const form = document.getElementById('scanner-form');
+  if (!form || form.dataset.submitting === '1') return;
+  form.dataset.submitting = '1';
+  document.querySelectorAll('[data-demo-code]').forEach(b => { b.disabled = true; });
+  if (input) { input.value = code; input.disabled = true; }
+  form.requestSubmit();
+  // Safety reset in case navigation stalls
+  setTimeout(() => { form.dataset.submitting = '0'; }, 1500);
+}
+
+// Live elapsed timer for an active facility session
+function initSessionTimer() {
+  const el = document.getElementById('session-timer');
+  if (!el) return;
+  const start = new Date((el.getAttribute('data-start') || '').replace(' ', 'T'));
+  if (isNaN(start.getTime())) { el.textContent = '—'; return; }
+
+  const render = () => {
+    const total = Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000));
+    const h = Math.floor(total / 3600);
+    const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    el.textContent = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+  };
+  render();
+  setInterval(render, 1000);
+}
+
+// Optional webcam QR/barcode scanning via html5-qrcode (graceful fallback)
+function initCameraScanner() {
+  const toggleBtn = document.getElementById('camera-toggle');
+  const viewport = document.getElementById('camera-viewport');
+  const toast = document.getElementById('scan-toast');
+  if (!toggleBtn || !viewport) return;
+
+  const labelOn = toggleBtn.getAttribute('data-label-on') || 'Use Camera';
+  let scanner = null;
+
+  const showToast = (msg) => {
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.hidden = false;
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => { toast.hidden = true; }, 4500);
+  };
+
+  toggleBtn.addEventListener('click', async () => {
+    if (scanner) {
+      try { await scanner.stop(); } catch (e) {}
+      scanner = null;
+      viewport.style.display = 'none';
+      toggleBtn.textContent = labelOn;
+      return;
+    }
+
+    if (typeof Html5Qrcode === 'undefined') {
+      showToast('Camera scanning library could not be loaded. Use the scan field or facility cards instead.');
+      return;
+    }
+
+    viewport.style.display = 'block';
+    scanner = new Html5Qrcode('camera-viewport');
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        (decodedText) => {
+          playScanBeep(880, 0.12);
+          submitFacilityScan(decodedText.trim().toUpperCase());
+        },
+        () => {}
+      );
+      toggleBtn.textContent = 'Stop Camera';
+    } catch (err) {
+      showToast('Camera is unavailable or permission was denied. Use the scan field or facility cards instead.');
+      viewport.style.display = 'none';
+      scanner = null;
+      toggleBtn.textContent = labelOn;
+    }
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (scanner) scanner.stop().catch(() => {});
+  });
+}
+
+// Short click beep to confirm a scan (single shared AudioContext)
+let _beepCtx = null;
+function playScanBeep(freq = 880, dur = 0.12) {
+  try {
+    _beepCtx = _beepCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = _beepCtx.createOscillator();
+    const gain = _beepCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.07, _beepCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, _beepCtx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(_beepCtx.destination);
+    osc.start();
+    osc.stop(_beepCtx.currentTime + dur);
+  } catch (e) { /* audio unavailable */ }
 }
 
 // Fetch and render Admin Chart.js Visualizations

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Facility Barcode Scanner - FairShare{% endblock %}
+
+{% block content %}
+<!-- Camera barcode/QR scanning library (only loaded on this page) -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<div style="margin-bottom: 2rem;">
+  <h1>Facility Barcode Scanner</h1>
+  <p style="color: var(--text-muted);">Scan the barcode posted at a facility entrance to start your session timer — scan it again to check out. Every scan is logged to your activity history.</p>
+</div>
+
+<div class="grid grid-cols-2" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Scanner Card -->
+  <div class="card" id="scanner-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h3>Scanner</h3>
+      {% if active_checkin %}
+        <span class="badge badge-emerald">Session Active</span>
+      {% else %}
+        <span class="badge badge-blue">Ready to Scan</span>
+      {% endif %}
+    </div>
+
+    <!-- Active Session Status -->
+    {% if active_checkin %}
+      <div class="session-active">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <span class="pulse-dot"></span>
+          <div>
+            <p style="font-weight: 700; color: #6ee7b7;">{{ active_checkin.facility_name }}</p>
+            <p style="color: var(--text-muted); font-size: 0.8rem;">
+              Started {{ active_checkin.check_in_time[11:16] }} · Elapsed
+              <strong id="session-timer" data-start="{{ active_checkin.check_in_time }}">0:00</strong>
+            </p>
+          </div>
+        </div>
+        <p style="color: var(--text-dim); font-size: 0.8rem; margin-top: 0.75rem; border-top: 1px dashed var(--border-glass); padding-top: 0.6rem;">
+          Scan the <strong>{{ active_checkin.facility_name }}</strong> barcode again to check out.
+        </p>
+      </div>
+    {% else %}
+      <div class="session-idle">
+        <p style="color: var(--text-dim); font-size: 0.85rem;">Not checked in. Scan any facility barcode to start your timer.</p>
+      </div>
+    {% endif %}
+
+    <!-- Scanner Frame -->
+    <form action="{{ url_for('member_scan') }}" method="POST" id="scanner-form" class="scanner-form">
+      <div class="scanner-frame">
+        <span class="scan-corner tl"></span><span class="scan-corner tr"></span>
+        <span class="scan-corner bl"></span><span class="scan-corner br"></span>
+        <div class="scan-line"></div>
+        <input type="text" name="facility_code" id="scanner-input" class="scanner-input"
+               placeholder="SCAN FACILITY BARCODE…" aria-label="Facility barcode code"
+               autocomplete="off" autocapitalize="off" spellcheck="false" autofocus required>
+      </div>
+      <p style="color: var(--text-dim); font-size: 0.78rem; text-align: center; margin-top: 0.5rem;">
+        USB scanner or manual code entry · press Enter to submit
+      </p>
+    </form>
+
+    <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+      <button type="button" id="camera-toggle" class="btn btn-secondary btn-sm" style="flex: 1;" data-label-on="Use Camera">
+        Use Camera
+      </button>
+      <button type="button" id="clear-scanner" class="btn btn-secondary btn-sm">Clear</button>
+    </div>
+    <div id="camera-viewport" class="camera-viewport" style="display: none;"></div>
+    <div id="scan-toast" class="scan-toast" hidden></div>
+  </div>
+
+  <!-- Facility Barcode Cards -->
+  <div class="card">
+    <h3>Facility Barcodes</h3>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 1rem;">
+      Posted at each facility entrance. Tap a card to simulate a scan for this demo.
+    </p>
+    <div class="facility-grid">
+      {% for code, name in facilities.items() %}
+        <button type="button" class="facility-scan-card" data-demo-code="{{ code }}">
+          <div class="facility-barcode-box">
+            <svg class="facility-barcode" data-barcode="{{ code }}" data-height="38" data-display="false"></svg>
+            <span class="facility-code">{{ code }}</span>
+          </div>
+          <div style="text-align: left; flex: 1;">
+            <p style="font-weight: 600; font-size: 0.9rem;">{{ name }}</p>
+            <p style="color: var(--text-dim); font-size: 0.75rem;">Tap to scan &rarr;</p>
+          </div>
+          <div class="facility-qr"><div data-qr="{{ code }}" data-qr-width="72"></div></div>
+        </button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Recent Facility Sessions -->
+<div class="card">
+  <h3>Recent Facility Sessions</h3>
+  <div class="table-container" style="margin-top: 1rem;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Facility</th>
+          <th>Check In</th>
+          <th>Check Out</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in recent_sessions %}
+          <tr>
+            <td><strong>{{ s.facility_name }}</strong></td>
+            <td>{{ s.check_in_time }}</td>
+            <td>{{ s.check_out_time or '—' }}</td>
+            <td>
+              {% if s.duration_minutes > 0 %}
+                <span class="badge badge-emerald">{{ s.duration_minutes }} mins</span>
+              {% else %}
+                <span class="badge badge-amber">Active</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" style="text-align:center; color: var(--text-dim);">No completed facility sessions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

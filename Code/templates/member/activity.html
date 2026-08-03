@@ -4,74 +4,44 @@
 
 {% block content %}
 <div style="margin-bottom: 2rem;">
-  <h1>Member Activity Log & Manual Entry</h1>
-  <p style="color: var(--text-muted);">Record visits, pro shop & restaurant purchases, or check facility session history.</p>
+  <h1>My Activity & Check-In History</h1>
+  <p style="color: var(--text-muted);">View your visits, purchases, and facility session history. All activity is recorded by the club.</p>
 </div>
 
-<div class="grid grid-cols-3" style="gap: 1.5rem; margin-bottom: 2rem;">
-  <!-- Manual Activity Logger Form -->
-  <div class="card" style="grid-column: span 1;">
-    <h3>Log Purchase or Visit</h3>
-    <form action="{{ url_for('member_activity') }}" method="POST" style="margin-top: 1rem;">
-      <div class="form-group">
-        <label class="form-label">Activity Type</label>
-        <select name="activity_type" class="form-control">
-          <option value="visit">Facility Visit</option>
-          <option value="purchase">Shop / Restaurant Purchase</option>
-          <option value="referral">Guest Referral</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Service Description</label>
-        <input type="text" name="service_name" class="form-control" placeholder="e.g. Pro Shop Equipment" required>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Transaction Value ($)</label>
-        <input type="number" step="0.01" min="0" name="transaction_value" class="form-control" placeholder="0.00" data-non-negative required>
-        <span style="font-size: 0.75rem; color: var(--text-dim);">Leave 0.00 for simple facility visits</span>
-      </div>
-
-      <button type="submit" class="btn btn-primary" style="width: 100%;">Record Activity</button>
-    </form>
-  </div>
-
-  <!-- Facility Usage Duration Log Table -->
-  <div class="card" style="grid-column: span 2;">
-    <h3>Facility Check-In & Usage Duration History</h3>
-    <div class="table-container" style="margin-top: 1rem;">
-      <table class="table">
-        <thead>
+<!-- Facility Usage Duration Log Table -->
+<div class="card" style="margin-bottom: 2rem;">
+  <h3>Facility Check-In & Usage Duration History</h3>
+  <div class="table-container" style="margin-top: 1rem;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Facility</th>
+          <th>Check In</th>
+          <th>Check Out</th>
+          <th>Duration</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for chk in checkins %}
           <tr>
-            <th>Facility</th>
-            <th>Check In</th>
-            <th>Check Out</th>
-            <th>Duration</th>
-            <th>Status</th>
+            <td><strong>{{ chk.facility_name }}</strong></td>
+            <td>{{ chk.check_in_time }}</td>
+            <td>{{ chk.check_out_time or 'In Progress' }}</td>
+            <td>
+              {% if chk.duration_minutes > 0 %}
+                <span class="badge badge-emerald">{{ chk.duration_minutes }} mins</span>
+              {% else %}
+                <span class="badge badge-amber">Active</span>
+              {% endif %}
+            </td>
+            <td>{{ chk.status|capitalize }}</td>
           </tr>
-        </thead>
-        <tbody>
-          {% for chk in checkins %}
-            <tr>
-              <td><strong>{{ chk.facility_name }}</strong></td>
-              <td>{{ chk.check_in_time }}</td>
-              <td>{{ chk.check_out_time or 'In Progress' }}</td>
-              <td>
-                {% if chk.duration_minutes > 0 %}
-                  <span class="badge badge-emerald">{{ chk.duration_minutes }} mins</span>
-                {% else %}
-                  <span class="badge badge-amber">Active</span>
-                {% endif %}
-              </td>
-              <td>{{ chk.status|capitalize }}</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="5" style="text-align:center; color: var(--text-dim);">No facility check-in logs recorded.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+        {% else %}
+          <tr><td colspan="5" style="text-align:center; color: var(--text-dim);">No facility check-in logs recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 

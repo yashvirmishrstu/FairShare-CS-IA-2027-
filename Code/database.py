@@ -53,12 +53,14 @@ def init_db():
         CREATE TABLE IF NOT EXISTS facility_checkins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             member_id INTEGER NOT NULL,
+            guest_id INTEGER,
             facility_name TEXT NOT NULL,
             check_in_time TIMESTAMP NOT NULL,
             check_out_time TIMESTAMP,
             duration_minutes INTEGER DEFAULT 0,
             status TEXT DEFAULT 'active' CHECK(status IN ('active', 'completed')),
-            FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
+            FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE,
+            FOREIGN KEY (guest_id) REFERENCES guest_ids (id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS guest_ids (
@@ -101,6 +103,12 @@ def init_db():
             FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
         );
     ''')
+
+    # Migration: add guest facility tracking column to facility_checkins (existing databases)
+    cursor.execute("PRAGMA table_info(facility_checkins)")
+    checkin_cols = [row[1] for row in cursor.fetchall()]
+    if 'guest_id' not in checkin_cols:
+        cursor.execute("ALTER TABLE facility_checkins ADD COLUMN guest_id INTEGER REFERENCES guest_ids(id) ON DELETE CASCADE")
 
     # Seed Default Reward Settings if empty
     cursor.execute("SELECT COUNT(*) FROM reward_settings")

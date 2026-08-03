@@ -1,7 +1,7 @@
 import pytest
 import os
 from main import app
-from database import init_db
+from database import init_db, get_db
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -56,3 +56,49 @@ def test_admin_login_and_csv_exports(client):
     rewards_csv = client.get('/admin/reports/export/rewards_csv')
     assert rewards_csv.status_code == 200
     assert b'Engagement Score' in rewards_csv.data
+
+def test_member_scan_requires_login(client):
+    response = client.get('/member/scan', follow_redirects=True)
+    assert b'Please log in to access this page' in response.data
+
+def test_member_scan_admin_redirects_not_crash(client):
+    # Admins have no member profile row — the scanner page must redirect, not 500
+    client.post('/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=True)
+    response = client.get('/member/scan', follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Member profile not found' in response.data
+
+def test_member_scan_checkin_checkout_flow(client):
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+
+    # Scanner page renders facility barcodes
+    response = client.get('/member/scan')
+    assert response.status_code == 200
+    assert b'Facility Barcode Scanner' in response.data
+    assert b'FAC-101' in response.data
+
+    # First scan: check in to facility (timer starts)
+    response = client.post('/member/scan', data={'facility_code': 'FAC-101'}, follow_redirects=True)
+    assert b'Checked in to Club Fitness' in response.data
+    assert b'Session Active' in response.data
+
+    # Scanning a different facility while active -> warning, session stays active
+    response = client.post('/member/scan', data={'facility_code': 'FAC-102'}, follow_redirects=True)
+    assert b'currently checked into' in response.data
+    assert b'Session Active' in response.data
+
+    # Second scan of the same facility: check out and log duration
+    response = client.post('/member/scan', data={'facility_code': 'FAC-101'}, follow_redirects=True)
+    assert b'Checked out of Club Fitness' in response.data
+    assert b'Ready to Scan' in response.data
+
+    # Unknown barcode rejected
+    response = client.post('/member/scan', data={'facility_code': 'UNKNOWN'}, follow_redirects=True)
+    assert b'Unknown facility barcode' in response.data
+
+    # Session duration is recorded in history
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM facility_checkins WHERE status = 'completed'")
+    assert cursor.fetchone()[0] >= 1
+    conn.close()

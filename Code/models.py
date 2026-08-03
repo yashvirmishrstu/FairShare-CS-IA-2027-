@@ -170,6 +170,21 @@ class FacilityTracker:
         return checkin_id
 
     @staticmethod
+    def guest_check_in(guest_id, host_member_id, facility_name):
+        """Check a guest into a facility, linked to their host member."""
+        conn = get_db()
+        cursor = conn.cursor()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute('''
+            INSERT INTO facility_checkins (member_id, guest_id, facility_name, check_in_time, status)
+            VALUES (?, ?, ?, ?, 'active')
+        ''', (host_member_id, guest_id, facility_name, now_str))
+        conn.commit()
+        checkin_id = cursor.lastrowid
+        conn.close()
+        return checkin_id
+
+    @staticmethod
     def check_out(checkin_id):
         """Check out member from facility and calculate usage duration."""
         conn = get_db()
@@ -193,10 +208,17 @@ class FacilityTracker:
         ''', (out_str, duration_mins, checkin_id))
 
         # Log as a visit activity for engagement score calculation
-        cursor.execute('''
-            INSERT INTO activities (member_id, activity_type, service_name, transaction_value)
-            VALUES (?, 'visit', ?, 0.0)
-        ''', (record['member_id'], f"Facility Use: {record['facility_name']} ({duration_mins} mins)"))
+        # Guest sessions are recorded on the guest ledger instead of the member's activity log
+        if record['guest_id']:
+            cursor.execute('''
+                INSERT INTO guest_activities (guest_id, activity_type, service_name, transaction_value)
+                VALUES (?, 'facility', ?, 0.0)
+            ''', (record['guest_id'], f"Facility Use: {record['facility_name']} ({duration_mins} mins)"))
+        else:
+            cursor.execute('''
+                INSERT INTO activities (member_id, activity_type, service_name, transaction_value)
+                VALUES (?, 'visit', ?, 0.0)
+            ''', (record['member_id'], f"Facility Use: {record['facility_name']} ({duration_mins} mins)"))
 
         conn.commit()
         conn.close()
@@ -204,6 +226,29 @@ class FacilityTracker:
 
 
 class GuestManager:
+    @staticmethod
+    def get_guest_by_code(guest_code):
+        """Look up a guest pass by its code."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM guest_ids WHERE guest_code = ?", (guest_code,))
+        guest = cursor.fetchone()
+        conn.close()
+        return guest
+
+    @staticmethod
+    def record_spending(guest_id, service_name, amount):
+        """Record spending for a guest by guest id (credits their host member)."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO guest_activities (guest_id, activity_type, service_name, transaction_value)
+            VALUES (?, 'purchase', ?, ?)
+        ''', (guest_id, service_name, amount))
+        conn.commit()
+        conn.close()
+        return True
+
     @staticmethod
     def create_guest_id(host_member_id, guest_name):
         """Generate a guest ID for visitors without a member ID."""

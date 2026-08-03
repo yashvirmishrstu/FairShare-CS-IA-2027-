@@ -6,7 +6,7 @@
   <title>{% block title %}FairShare - Personalized Club Rewards & Profit Sharing{% endblock %}</title>
   
   <!-- CSS Styles -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=2">
   
   <!-- Fast JS Libraries from CDN for Barcode, QR Code, and Analytics -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
@@ -36,7 +36,8 @@
             <li><a href="{{ url_for('admin_reports') }}" class="nav-link">CSV Reports</a></li>
           {% else %}
             <li><a href="{{ url_for('member_dashboard') }}" class="nav-link">Dashboard</a></li>
-            <li><a href="{{ url_for('member_activity') }}" class="nav-link">Activity & Check-In</a></li>
+            <li><a href="{{ url_for('member_scan') }}" class="nav-link">Scan Facility</a></li>
+            <li><a href="{{ url_for('member_activity') }}" class="nav-link">My History</a></li>
             <li><a href="{{ url_for('member_rewards') }}" class="nav-link">My Rewards</a></li>
           {% endif %}
           <li><a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm">Log Out ({{ current_user.username }})</a></li>
@@ -72,6 +73,6 @@
   </footer>
 
   <!-- App Interactive JavaScript -->
-  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=2"></script>
 </body>
 </html>
