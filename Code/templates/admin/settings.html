@@ -9,7 +9,7 @@
       <span class="badge badge-black" style="margin-bottom: 0.5rem;">Algorithmic Engine Configuration</span>
       <h2>Reward Algorithm Weighting Parameters</h2>
       <p style="color: var(--text-muted); font-size: 0.9rem;">
-        Modify the mathematical weights used to calculate member engagement scores and the total profit-sharing pool amount available for distribution.
+        Modify the mathematical weights used to calculate members' total points earned and the total profit-sharing pool amount available for distribution.
       </p>
     </div>
 
@@ -60,7 +60,7 @@
       <div class="form-group">
         <label class="form-label">Profit-Sharing Pool Amount ($)</label>
         <input type="number" step="100.00" min="0" name="profit_sharing_pool" class="form-control" value="{{ settings.profit_sharing_pool }}" data-non-negative required>
-        <span style="font-size: 0.75rem; color: var(--text-dim);">Total monetary pool distributed proportionally based on engagement scores.</span>
+        <span style="font-size: 0.75rem; color: var(--text-dim);">Total monetary pool distributed proportionally based on total points earned.</span>
       </div>
 
       <button type="submit" class="btn btn-emerald" style="width: 100%; margin-top: 1rem; padding: 0.8rem;">
@@ -70,7 +70,7 @@
 
     <div style="margin-top: 1.5rem; background: var(--tertiary-soft); border: 4px solid var(--border-glass); padding: 1rem; font-size: 0.85rem; box-shadow: 4px 4px 0 0 var(--shadow-color);">
       <strong style="color: var(--ink); text-transform: uppercase; letter-spacing: 0.06em;">Active Mathematical Formula:</strong><br>
-      <code style="color: var(--ink);">Engagement Score = [ (Visits &times; {{ settings.visit_weight }}) + (Total Spending &times; {{ settings.spending_weight }}) + (Referrals &times; {{ settings.referral_weight }}) + (Facility Minutes &times; {{ settings.facility_weight }}) + (Months of Membership &times; {{ settings.loyalty_weight }}) ] &times; Tier Multiplier</code>
+      <code style="color: var(--ink);">Total Points Earned = [ (Visits &times; {{ settings.visit_weight }}) + (Total Spending &times; {{ settings.spending_weight }}) + (Referrals &times; {{ settings.referral_weight }}) + (Facility Minutes &times; {{ settings.facility_weight }}) + (Months of Membership &times; {{ settings.loyalty_weight }}) ] &times; Tier Multiplier</code>
     </div>
   </div>
 </div>

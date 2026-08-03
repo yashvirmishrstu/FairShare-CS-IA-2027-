@@ -5,7 +5,7 @@
 {% block content %}
 <div style="margin-bottom: 2rem;">
   <h1>Personalised Member Rewards & Profit Sharing</h1>
-  <p style="color: var(--text-muted);">Your dynamic discount rates and earned profit sharing are updated in real time based on your aggregate engagement score.</p>
+  <p style="color: var(--text-muted);">Your dynamic discount rates and earned profit sharing are updated in real time based on your total points earned.</p>
 </div>
 
 <div class="grid grid-cols-2" style="gap: 2rem; margin-bottom: 2rem;">
@@ -13,11 +13,11 @@
   <div class="card">
     <span class="badge badge-emerald" style="margin-bottom: 0.5rem;">Active Reward Voucher</span>
     <h2 style="font-size: 2rem; margin-bottom: 0.25rem;">{{ "%.0f"|format(rewards.discount_percentage) }}% Discount</h2>
-    <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">Engagement Score: <strong>{{ "%.1f"|format(rewards.engagement_score) }} points</strong></p>
+    <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">Total Points Earned: <strong>{{ "%.1f"|format(rewards.engagement_score) }} points</strong></p>
 
     <!-- Full points breakdown: every club data source that feeds the score -->
     <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; margin-bottom: 1.5rem; font-size: 0.85rem;">
-      <span style="color: var(--text-dim); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;">How your score is calculated</span>
+      <span style="color: var(--text-dim); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;">How your points are calculated</span>
       <div style="margin-top: 0.65rem; display: grid; gap: 0.4rem;">
         <div style="display: flex; justify-content: space-between;">
           <span style="color: var(--text-muted);">{{ rewards.details.visit_count }} visits &times; visit weight</span>
@@ -40,7 +40,7 @@
           <strong style="color: var(--ink);">+{{ "%.1f"|format(rewards.details.loyalty_points) }} pts</strong>
         </div>
         <div style="display: flex; justify-content: space-between; border-top: 2px solid var(--border-glass); padding-top: 0.4rem;">
-          <span style="color: var(--text-muted);">Base score &times; {{ rewards.details.tier_multiplier }} ({{ rewards.details.membership_type }} tier)</span>
+          <span style="color: var(--text-muted);">Base points &times; {{ rewards.details.tier_multiplier }} ({{ rewards.details.membership_type }} tier)</span>
           <strong style="color: var(--ink);">= {{ "%.1f"|format(rewards.engagement_score) }} pts</strong>
         </div>
       </div>
@@ -80,8 +80,8 @@
 
 <!-- Dynamic Discount Scale Card -->
 <div class="card">
-  <h3>Dynamic Engagement & Discount Scale</h3>
-  <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">Higher engagement unlocks higher rewards without administrator intervention.</p>
+  <h3>Dynamic Points & Discount Scale</h3>
+  <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">Higher points unlock higher rewards without administrator intervention.</p>
 
   <div class="grid grid-cols-5" style="gap: 1rem;">
     <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--border-glass);">

@@ -2,7 +2,7 @@ import pytest
 import os
 from main import app
 from database import init_db, get_db
-from models import EngagementEngine
+from models import EngagementEngine, RewardSettings
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -56,7 +56,7 @@ def test_admin_login_and_csv_exports(client):
     # Test CSV rewards export
     rewards_csv = client.get('/admin/reports/export/rewards_csv')
     assert rewards_csv.status_code == 200
-    assert b'Engagement Score' in rewards_csv.data
+    assert b'Total Points Earned' in rewards_csv.data
 
 def test_member_scan_requires_login(client):
     response = client.get('/member/scan', follow_redirects=True)
@@ -412,6 +412,43 @@ def test_receipt_cross_role_dedup_and_admin_validation(client):
     client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
     response = client.post('/member/receipts/scan', data={'receipt_code': receipt_code}, follow_redirects=True)
     assert b'already been scanned' in response.data
+
+def test_admin_member_edit_preserves_membership_tier(client):
+    """Editing a member's contact details must NOT reset their membership tier
+    back to 'Member' (the silent-reset bug where the edit form omitted the tier
+    field and the route defaulted to 'Member')."""
+    # Admin logs in and upgrades Alice to VIP
+    client.post('/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=True)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''SELECT m.id FROM members m JOIN users u ON m.user_id = u.id WHERE u.username = 'alice' ''')
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+
+    response = client.post(f'/admin/members/edit/{alice_id}', data={
+        'full_name': 'Alice Johnson', 'email': 'alice@example.com', 'phone': '555-0101',
+        'membership_type': 'VIP'
+    }, follow_redirects=True)
+    assert b'Member record updated' in response.data
+
+    # VIP tier persists after a second edit that only changes the phone number
+    response = client.post(f'/admin/members/edit/{alice_id}', data={
+        'full_name': 'Alice Johnson', 'email': 'alice@example.com', 'phone': '555-9999'
+    }, follow_redirects=True)
+    assert b'Member record updated' in response.data
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT membership_type FROM members WHERE id = ?", (alice_id,))
+    tier = cursor.fetchone()['membership_type']
+    conn.close()
+    assert tier == 'VIP'
+
+    # The VIP multiplier flows into the member's engagement score
+    summary = EngagementEngine.calculate_engagement_score(alice_id)
+    settings = RewardSettings.get_settings()
+    assert summary['tier_multiplier'] == settings['vip_multiplier']
 
 def test_member_scan_checkin_checkout_flow(client):
     client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)

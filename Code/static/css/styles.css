@@ -429,6 +429,54 @@ code {
 
 .stat-desc { font-size: 0.8rem; opacity: 0.8; }
 
+/* Points History mini-feed — recent point-earning events */
+.points-feed {
+  display: grid;
+  gap: 0;
+}
+
+.points-feed-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0.25rem;
+  border-bottom: 2px solid var(--border-glass);
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+.points-feed-row:last-child { border-bottom: none; }
+.points-feed-row:hover {
+  background: var(--surface-dim);
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.points-feed-value {
+  flex-shrink: 0;
+  min-width: 6.5rem;
+  text-align: right;
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: var(--secondary);
+}
+.points-feed-value-emerald { color: var(--tertiary); }
+.points-feed-value-amber { color: var(--accent-amber); }
+
+/* Breakdown row on stat cards — sources that built the total */
+.stat-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.7rem;
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 2px solid currentColor;
+  opacity: 0.85;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 /* ------------------------------------------------------------
    Buttons — square, 4px border, hard shadow, press-in
    ------------------------------------------------------------ */
@@ -783,6 +831,7 @@ footer {
   padding: 0.9rem;
   color: var(--ink);
   cursor: pointer;
+  flex-shrink: 0;
   box-shadow: 6px 6px 0 0 var(--shadow-color);
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
   position: relative;
@@ -828,12 +877,13 @@ footer {
   background: var(--surface-hi);
   border: 2px solid var(--ink);
   border-radius: 0;
-  padding: 0.4rem 0.5rem;
+  padding: 0.3rem 0.4rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.15rem;
   flex-shrink: 0;
+  max-width: 100%;
 }
 
 .facility-barcode-box svg { max-width: 130px; height: 38px; }
@@ -864,8 +914,15 @@ footer {
   background: var(--surface-hi);
   border: 2px solid var(--ink);
   border-radius: 0;
-  padding: 0.3rem;
+  padding: 0.2rem;
   flex-shrink: 0;
+  line-height: 0;
+}
+.facility-qr img,
+.facility-qr canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .guest-pass-qr {
@@ -1011,4 +1068,88 @@ footer {
 .anim-text  { animation: fadeIn 0.9s ease-out 0.25s both; }
 .anim-btn   { animation: slideUp 0.7s ease-out 0.35s both; }
 .anim-color { animation: fadeIn 0.9s ease-out 0.5s both; }
+
+/* Dashboard stagger delays */
+.dash-stats   { animation: fadeIn 0.7s ease-out 0.1s both; }
+.dash-points  { animation: fadeInDown 0.7s ease-out 0.2s both; }
+.dash-cta-red    { animation: slideUp 0.7s ease-out 0.3s both; }
+.dash-cta-yellow { animation: slideUp 0.7s ease-out 0.4s both; }
+.dash-cta-blue   { animation: slideUp 0.7s ease-out 0.5s both; }
+.dash-table  { animation: fadeIn 0.7s ease-out 0.6s both; }
+
+@keyframes gentlePulse {
+  0%, 100% { box-shadow: 6px 6px 0 0 var(--shadow-color); }
+  50%      { box-shadow: 10px 10px 0 0 var(--shadow-color); }
+}
+.cta-pulse { animation: gentlePulse 3s ease-in-out infinite; }
+
+/* Sparkline mini-chart for activity summary */
+.sparkline-bar {
+  background: var(--primary);
+  border: 1px solid var(--ink);
+  transition: height 0.3s ease;
+  flex-shrink: 0;
+}
+.sparkline-bar:hover {
+  background: var(--primary-container);
+  transform: scaleY(1.15);
+}
+
+/* Points-logged celebration toast */
+@keyframes pointsPopIn {
+  0%   { opacity: 0; transform: scale(0.5) rotate(-12deg); }
+  60%  { opacity: 1; transform: scale(1.05) rotate(1deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-2deg); }
+}
+@keyframes pointsFadeOut {
+  0%   { opacity: 1; transform: scale(1) rotate(-2deg); }
+  100% { opacity: 0; transform: scale(1.1) rotate(0deg); }
+}
+.points-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  pointer-events: none;
+}
+.points-toast-inner {
+  background: var(--primary);
+  color: var(--on-primary);
+  padding: 1.5rem 2.5rem;
+  border: 4px solid var(--ink);
+  box-shadow: 8px 8px 0 0 var(--shadow-color);
+  text-align: center;
+  animation: pointsPopIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  transform: rotate(-2deg);
+}
+.points-toast-inner.fade-out {
+  animation: pointsFadeOut 0.4s ease-out forwards;
+}
+.points-toast-value {
+  font-family: 'Archivo Narrow', 'Outfit', sans-serif;
+  font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.points-toast-label {
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 0.35rem;
+}
+.points-toast-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.30);
+  z-index: 9998;
+  animation: fadeIn 0.3s ease-out both;
+  pointer-events: none;
+}
+.points-toast-backdrop.fade-out {
+  animation: fadeIn 0.3s ease-out reverse both;
+}
 

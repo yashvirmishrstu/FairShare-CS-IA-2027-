@@ -148,7 +148,7 @@
             {% for r in open_receipts %}
               <button type="button" class="facility-scan-card" data-receipt-code="{{ r.receipt_code }}">
                 <div class="facility-barcode-box">
-                  <div class="facility-qr"><div data-qr="{{ r.receipt_code }}" data-qr-width="44"></div></div>
+                  <div class="facility-qr"><div data-qr="{{ r.receipt_code }}" data-qr-width="36"></div></div>
                   <span class="facility-code">{{ r.receipt_code }}</span>
                 </div>
                 <div class="facility-ticket-body">

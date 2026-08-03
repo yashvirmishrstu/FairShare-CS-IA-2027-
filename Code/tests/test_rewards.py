@@ -146,6 +146,46 @@ def test_membership_tier_multiplier_boosts_score():
     assert summary['engagement_score'] == round(summary['base_score'] * summary['tier_multiplier'], 2)
     assert summary['engagement_score'] >= summary['base_score']
 
+def test_tier_normalization_and_multiplier_lookup():
+    """Every tier spelling resolves to the canonical tier and its multiplier,
+    and unknown tiers fall back to the base Member multiplier (1.0)."""
+    settings = RewardSettings.get_settings()
+
+    # normalize_tier: canonical spellings, mixed case, whitespace, aliases
+    assert EngagementEngine.normalize_tier('Member') == 'Member'
+    assert EngagementEngine.normalize_tier('Premium') == 'Premium'
+    assert EngagementEngine.normalize_tier('VIP') == 'VIP'
+    assert EngagementEngine.normalize_tier('premium') == 'Premium'
+    assert EngagementEngine.normalize_tier('vip') == 'VIP'
+    assert EngagementEngine.normalize_tier('  Premium  ') == 'Premium'
+    assert EngagementEngine.normalize_tier('') == 'Member'
+    assert EngagementEngine.normalize_tier(None) == 'Member'
+    assert EngagementEngine.normalize_tier('Gold') == 'Member'  # unknown -> Member
+
+    # tier_multiplier: uses the live settings values for paid tiers
+    assert EngagementEngine.tier_multiplier('Member', settings) == 1.0
+    assert EngagementEngine.tier_multiplier('Premium', settings) == settings['premium_multiplier']
+    assert EngagementEngine.tier_multiplier('VIP', settings) == settings['vip_multiplier']
+    assert EngagementEngine.tier_multiplier('premium', settings) == settings['premium_multiplier']
+    assert EngagementEngine.tier_multiplier('vip ', settings) == settings['vip_multiplier']
+    assert EngagementEngine.tier_multiplier('Platinum', settings) == 1.0
+
+def test_membership_type_persists_and_multiplier_applies():
+    """Changing membership_type to VIP applies the VIP multiplier from settings."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members LIMIT 1")
+    m_id = cursor.fetchone()['id']
+    cursor.execute("UPDATE members SET membership_type = 'VIP' WHERE id = ?", (m_id,))
+    conn.commit()
+    conn.close()
+
+    settings = RewardSettings.get_settings()
+    summary = EngagementEngine.calculate_engagement_score(m_id)
+    assert summary['membership_type'] == 'VIP'
+    assert summary['tier_multiplier'] == settings['vip_multiplier']
+    assert summary['engagement_score'] == round(summary['base_score'] * settings['vip_multiplier'], 2)
+
 def test_settings_update():
     RewardSettings.update_settings(15.0, 1.0, 60.0, 0.5, 8.0, 15000.00, 1.2, 1.5)
     settings = RewardSettings.get_settings()
@@ -157,3 +197,93 @@ def test_settings_update():
     assert settings['premium_multiplier'] == 1.2
     assert settings['vip_multiplier'] == 1.5
     assert settings['profit_sharing_pool'] == 15000.00
+
+
+def test_batch_scores_match_single_member_lookup():
+    """The batch pass must produce the same summary for every member as the
+    per-member lookup — the grouped queries must not change the math."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members")
+    member_ids = [r['id'] for r in cursor.fetchall()]
+    conn.close()
+
+    batch = EngagementEngine.calculate_all_scores()
+    assert len(batch) == len(member_ids)
+
+    for m_id in member_ids:
+        assert m_id in batch, f"member {m_id} missing from batch pass"
+        single = EngagementEngine.calculate_engagement_score(m_id)
+        for key in ('visit_count', 'total_spending', 'guest_referrals',
+                    'facility_minutes', 'loyalty_months', 'base_score',
+                    'tier_multiplier', 'engagement_score'):
+            assert batch[m_id][key] == single[key], \
+                f"batch/single mismatch on {key} for member {m_id}"
+
+
+def test_recalculate_all_upserts_rewards_and_preserves_codes():
+    """recalculate_all() creates one active reward row per member and updates
+    (never duplicates) them on subsequent calls, keeping redemption codes
+    stable across recomputes."""
+    # No reward rows exist yet
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM rewards")
+    assert cursor.fetchone()[0] == 0
+    cursor.execute("SELECT id FROM members")
+    member_ids = [r['id'] for r in cursor.fetchall()]
+    conn.close()
+
+    rewards_map = EngagementEngine.recalculate_all()
+    assert set(rewards_map.keys()) == set(member_ids)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT member_id, redemption_code FROM rewards WHERE status='active'")
+    first = {r['member_id']: r['redemption_code'] for r in cursor.fetchall()}
+    conn.close()
+    assert len(first) == len(member_ids)  # exactly one active row per member
+
+    # Data changes (add an activity) then recompute — rows update, codes persist
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value) VALUES (?, 'purchase', 'New Purchase', 50.0)", (member_ids[0],))
+    conn.commit()
+    conn.close()
+    EngagementEngine.recalculate_all()
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT member_id, redemption_code, engagement_score FROM rewards WHERE status='active'")
+    second = {r['member_id']: (r['redemption_code'], r['engagement_score']) for r in cursor.fetchall()}
+    conn.close()
+
+    assert len(second) == len(member_ids)  # no duplicate rows after recompute
+    for m_id in member_ids:
+        assert second[m_id][0] == first[m_id]  # redemption code survived
+    # The member whose spending grew now has a higher stored score
+    assert second[member_ids[0]][1] > rewards_map[member_ids[0]]['engagement_score']
+
+
+def test_rewards_view_and_csv_export_are_read_only():
+    """view_all_rewards() and the financial CSV export must never write to the
+    database — reading a page or downloading a report is a pure GET."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM rewards")
+    assert cursor.fetchone()[0] == 0
+    conn.close()
+
+    # Both read paths run on an empty rewards table and must not create rows
+    view = EngagementEngine.view_all_rewards()
+    assert len(view) > 0  # summaries computed on the fly for seeded members
+
+    csv_data = CSVReportGenerator.export_financial_reward_summaries()
+    assert 'Total Points Earned' in csv_data
+    assert 'Member Code' in csv_data
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM rewards")
+    assert cursor.fetchone()[0] == 0, "read-only views must not insert reward rows"
+    conn.close()

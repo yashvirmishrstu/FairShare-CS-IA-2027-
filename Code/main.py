@@ -139,8 +139,10 @@ def guest_quick():
                 session['guest_id'] = guest['id']
                 session['guest_login_date'] = today
                 GuestManager.record_spending(guest['id'], service_name, amount)
-                EngagementEngine.update_member_rewards(guest['host_member_id'])
-                flash(f'Welcome, {guest["guest_name"]}! Purchase of ${amount:.2f} recorded — credited to your host member.', 'success')
+                EngagementEngine.recalculate_all()
+                settings = RewardSettings.get_settings()
+                pts = int(round(amount * settings['spending_weight']))
+                flash(f'Welcome, {guest["guest_name"]}! Purchase of ${amount:.2f} recorded — +{pts} pts credited to your host member.', 'success')
                 return redirect(url_for('guest_dashboard'))
 
     return render_template('guest/quick.html')
@@ -221,7 +223,15 @@ def guest_scan():
         if active:
             if active['facility_name'] == facility_name:
                 duration = FacilityTracker.check_out(active['id'])
-                flash(f'Checked out of {facility_name}! Session duration: {duration} mins.', 'success')
+                if duration:
+                    EngagementEngine.recalculate_all()
+                    settings = RewardSettings.get_settings()
+                    visit_pts = int(round(settings['visit_weight']))
+                    facility_pts = int(round(duration * settings['facility_weight']))
+                    total_pts = visit_pts + facility_pts
+                    flash(f'Checked out of {facility_name}! Session duration: {duration} mins. +{total_pts} pts earned!', 'success')
+                else:
+                    flash(f'Checked out of {facility_name}! Session duration: {duration} mins.', 'success')
             else:
                 flash(f'You are currently checked into {active["facility_name"]}. Scan that facility again to check out first.', 'warning')
         else:
@@ -331,15 +341,37 @@ def member_dashboard():
         flash('Member profile not found.', 'danger')
         return redirect(url_for('index'))
 
-    # Calculate current reward details
-    rewards = EngagementEngine.update_member_rewards(member['id'])
+    # Calculate current reward details (read-only view — GET never writes)
+    rewards = EngagementEngine.view_member_rewards(member['id'])
 
     # Recent activities
     cursor.execute('''
         SELECT activity_type, service_name, transaction_value, guest_count, created_at
-        FROM activities WHERE member_id = ? ORDER BY created_at DESC LIMIT 5
+        FROM activities WHERE member_id = ? ORDER BY created_at DESC LIMIT 8
     ''', (member['id'],))
     recent_activities = cursor.fetchall()
+
+    # Points history — annotate each recent event with the points it earned,
+    # using the same active algorithm weights as the engagement engine
+    settings = RewardSettings.get_settings()
+    points_history = []
+    for act in recent_activities:
+        if act['activity_type'] == 'visit':
+            pts = round(settings['visit_weight'], 2)
+        elif act['activity_type'] == 'purchase':
+            pts = round((act['transaction_value'] or 0) * settings['spending_weight'], 2)
+        elif act['activity_type'] == 'referral':
+            pts = round((act['guest_count'] or 0) * settings['referral_weight'], 2)
+        else:
+            pts = 0.0
+        points_history.append({
+            'activity_type': act['activity_type'],
+            'service_name': act['service_name'],
+            'transaction_value': act['transaction_value'],
+            'guest_count': act['guest_count'],
+            'created_at': act['created_at'],
+            'points': pts,
+        })
 
     # Active facility checkins (member-only sessions, excluding guest sessions)
     cursor.execute('''
@@ -354,7 +386,8 @@ def member_dashboard():
     conn.close()
 
     return render_template('member/dashboard.html', member=member, rewards=rewards,
-                           recent_activities=recent_activities, active_checkin=active_checkin, guests=guests)
+                           recent_activities=recent_activities, points_history=points_history,
+                           active_checkin=active_checkin, guests=guests)
 
 @app.route('/member/activity')
 @login_required
@@ -412,7 +445,15 @@ def member_scan():
             if active:
                 if active['facility_name'] == facility_name:
                     duration = FacilityTracker.check_out(active['id'])
-                    flash(f'Checked out of {facility_name}! Session duration: {duration} mins.', 'success')
+                    if duration:
+                        EngagementEngine.recalculate_all()
+                        settings = RewardSettings.get_settings()
+                        visit_pts = int(round(settings['visit_weight']))
+                        facility_pts = int(round(duration * settings['facility_weight']))
+                        total_pts = visit_pts + facility_pts
+                        flash(f'Checked out of {facility_name}! Session duration: {duration} mins. +{total_pts} pts earned!', 'success')
+                    else:
+                        flash(f'Checked out of {facility_name}! Session duration: {duration} mins.', 'success')
                 else:
                     flash(f'You are currently checked into {active["facility_name"]}. Scan that facility again to check out first.', 'warning')
             else:
@@ -513,10 +554,13 @@ def member_receipt_scan():
         flash('Member profile not found.', 'danger')
         return redirect(url_for('member_expenses'))
 
+    receipt = ReceiptManager.get_receipt_by_code(receipt_code)
     result = ReceiptManager.redeem_for_member(receipt_code, member['id'])
     if result['ok']:
-        EngagementEngine.update_member_rewards(member['id'])
-        flash(result['message'], 'success')
+        EngagementEngine.recalculate_all()
+        settings = RewardSettings.get_settings()
+        pts = int(round((receipt['amount'] if receipt else 0) * settings['spending_weight']))
+        flash(f'{result["message"]} +{pts} pts earned!', 'success')
     else:
         flash(result['message'], 'danger')
     return redirect(url_for('member_expenses'))
@@ -541,10 +585,13 @@ def guest_receipt_scan():
         flash('Guest pass not found. Please sign in again.', 'danger')
         return redirect(url_for('login', tab='guest'))
 
+    receipt = ReceiptManager.get_receipt_by_code(receipt_code)
     result = ReceiptManager.redeem_for_guest(receipt_code, guest['id'])
     if result['ok']:
-        EngagementEngine.update_member_rewards(guest['host_member_id'])
-        flash(result['message'], 'success')
+        EngagementEngine.recalculate_all()
+        settings = RewardSettings.get_settings()
+        pts = int(round((receipt['amount'] if receipt else 0) * settings['spending_weight']))
+        flash(f'{result["message"]} +{pts} pts earned!', 'success')
     else:
         flash(result['message'], 'danger')
     return redirect(url_for('guest_dashboard'))
@@ -563,7 +610,12 @@ def admin_checkin():
 def admin_checkout(checkin_id):
     duration = FacilityTracker.check_out(checkin_id)
     if duration:
-        flash(f'Member checked out! Duration logged: {duration} minutes.', 'info')
+        EngagementEngine.recalculate_all()
+        settings = RewardSettings.get_settings()
+        visit_pts = int(round(settings['visit_weight']))
+        facility_pts = int(round(duration * settings['facility_weight']))
+        total_pts = visit_pts + facility_pts
+        flash(f'Member checked out! Duration logged: {duration} minutes. +{total_pts} pts earned!', 'info')
     else:
         flash('Invalid check-out request.', 'danger')
     return redirect(url_for('admin_activity'))
@@ -583,8 +635,10 @@ def member_guest_create():
         return redirect(url_for('member_dashboard'))
 
     result = GuestManager.create_guest_id(member['id'], guest_name)
-    EngagementEngine.update_member_rewards(member['id'])
-    flash(f'Guest ID Created! Pass Code: {result["guest_code"]}', 'success')
+    EngagementEngine.recalculate_all()
+    settings = RewardSettings.get_settings()
+    pts = int(round(settings['referral_weight']))
+    flash(f'Guest ID Created! Pass Code: {result["guest_code"]} — +{pts} pts earned!', 'success')
     conn.close()
     return redirect(url_for('member_dashboard'))
 
@@ -609,7 +663,10 @@ def guest_spending():
     conn.close()
 
     GuestManager.record_spending(guest['id'], service_name, amount)
-    flash(f'Purchase of ${amount:.2f} recorded — credited to your host member!', 'success')
+    EngagementEngine.recalculate_all()
+    settings = RewardSettings.get_settings()
+    pts = int(round(amount * settings['spending_weight']))
+    flash(f'Purchase of ${amount:.2f} recorded — +{pts} pts credited to your host member!', 'success')
     return redirect(url_for('guest_dashboard'))
 
 @app.route('/member/rewards', methods=['GET', 'POST'])
@@ -620,15 +677,16 @@ def member_rewards():
     cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
     member = cursor.fetchone()
 
-    rewards = EngagementEngine.update_member_rewards(member['id'])
-
     if request.method == 'POST':
         # Redeem reward action
         cursor.execute("UPDATE rewards SET status = 'redeemed' WHERE member_id = ? AND status = 'active'", (member['id'],))
         conn.commit()
-        # Generate new reward voucher
-        rewards = EngagementEngine.update_member_rewards(member['id'])
+        # Generate new reward voucher (write path refreshes the whole club)
+        rewards = EngagementEngine.recalculate_all().get(member['id'])
         flash('Voucher code generated & verified!', 'success')
+    else:
+        # Read-only rewards view — GET never writes to the database
+        rewards = EngagementEngine.view_member_rewards(member['id'])
 
     conn.close()
     return render_template('member/rewards.html', rewards=rewards)
@@ -673,9 +731,14 @@ def admin_analytics_api():
     ''')
     facility_trends = [dict(row) for row in cursor.fetchall()]
 
-    # Total rewards distributed breakdown
-    cursor.execute("SELECT discount_percentage, COUNT(*) as count FROM rewards GROUP BY discount_percentage")
-    reward_distribution = [dict(row) for row in cursor.fetchall()]
+    # Total rewards distributed breakdown — computed from the live read-only
+    # rewards view so the chart is never stale or empty on a fresh database
+    # (reward rows are only materialized on data-changing writes).
+    band_counts = {}
+    for r in EngagementEngine.view_all_rewards().values():
+        d = r['discount_percentage']
+        band_counts[d] = band_counts.get(d, 0) + 1
+    reward_distribution = [{'discount_percentage': d, 'count': c} for d, c in sorted(band_counts.items())]
 
     # Activity hourly peak distribution
     cursor.execute("SELECT strftime('%H', created_at) as hour, COUNT(*) as count FROM activities GROUP BY hour")
@@ -701,7 +764,7 @@ def admin_members():
         full_name = request.form.get('full_name', '').strip()
         email = request.form.get('email', '').strip()
         phone = request.form.get('phone', '').strip()
-        membership_type = request.form.get('membership_type', 'Member')
+        membership_type = EngagementEngine.normalize_tier(request.form.get('membership_type', 'Member'))
 
         if not username or not password or not full_name or not email:
             flash('Required fields missing for member creation.', 'danger')
@@ -719,6 +782,7 @@ def admin_members():
                     VALUES (?, ?, ?, ?, ?, ?)
                 ''', (u_id, full_name, membership_type, email, phone, m_code))
                 conn.commit()
+                EngagementEngine.recalculate_all()
                 flash(f'Member {full_name} added successfully!', 'success')
 
     cursor.execute('''
@@ -728,14 +792,13 @@ def admin_members():
     ''')
     members_list = cursor.fetchall()
     
-    # Calculate rewards for all members
-    member_data = []
-    for m in members_list:
-        rewards = EngagementEngine.update_member_rewards(m['id'])
-        member_data.append({'profile': m, 'rewards': rewards})
+    # Read-only batch rewards view — page loads never write to the database
+    rewards_map = EngagementEngine.view_all_rewards()
+    member_data = [{'profile': m, 'rewards': rewards_map.get(m['id'])} for m in members_list]
 
+    settings = RewardSettings.get_settings()
     conn.close()
-    return render_template('admin/members.html', member_data=member_data)
+    return render_template('admin/members.html', member_data=member_data, settings=settings)
 
 @app.route('/admin/members/edit/<int:member_id>', methods=['POST'])
 @admin_required
@@ -743,7 +806,6 @@ def admin_member_edit(member_id):
     full_name = request.form.get('full_name', '').strip()
     email = request.form.get('email', '').strip()
     phone = request.form.get('phone', '').strip()
-    membership_type = request.form.get('membership_type', 'Member')
 
     if not full_name or not email:
         flash('Full name and email are required.', 'danger')
@@ -751,14 +813,27 @@ def admin_member_edit(member_id):
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE members
-        SET full_name = ?, email = ?, phone = ?, membership_type = ?
-        WHERE id = ?
-    ''', (full_name, email, phone, membership_type, member_id))
+
+    # Only update membership tier when the form actually submits it — an edit that
+    # omits the field (older clients, partial requests) must NEVER silently reset
+    # a Premium/VIP member back to 'Member'.
+    if 'membership_type' in request.form:
+        membership_type = EngagementEngine.normalize_tier(request.form['membership_type'])
+        cursor.execute('''
+            UPDATE members
+            SET full_name = ?, email = ?, phone = ?, membership_type = ?
+            WHERE id = ?
+        ''', (full_name, email, phone, membership_type, member_id))
+    else:
+        cursor.execute('''
+            UPDATE members
+            SET full_name = ?, email = ?, phone = ?
+            WHERE id = ?
+        ''', (full_name, email, phone, member_id))
     conn.commit()
     conn.close()
 
+    EngagementEngine.recalculate_all()
     flash('Member record updated!', 'success')
     return redirect(url_for('admin_members'))
 
@@ -785,7 +860,7 @@ def admin_activity():
                 VALUES (?, ?, ?, ?)
             ''', (member_id, activity_type, service_name, transaction_value))
             conn.commit()
-            EngagementEngine.update_member_rewards(member_id)
+            EngagementEngine.recalculate_all()
             flash('Admin entry logged successfully!', 'success')
 
     cursor.execute('''
@@ -843,6 +918,7 @@ def admin_settings():
 
         RewardSettings.update_settings(visit_w, spend_w, referral_w, facility_w,
                                        loyalty_w, profit_pool, premium_mult, vip_mult)
+        EngagementEngine.recalculate_all()
         flash('Algorithm parameters & profit-sharing pool updated successfully!', 'success')
         return redirect(url_for('admin_settings'))
 

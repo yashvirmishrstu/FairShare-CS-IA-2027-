@@ -34,6 +34,16 @@
       </div>
 
       <div class="form-group">
+        <label class="form-label">Membership Tier</label>
+        <select name="membership_type" class="form-control">
+          <option value="Member">Member (&times;1.0)</option>
+          <option value="Premium">Premium (&times;{{ settings.premium_multiplier }})</option>
+          <option value="VIP">VIP (&times;{{ settings.vip_multiplier }})</option>
+        </select>
+        <span style="font-size: 0.75rem; color: var(--text-dim);">Premium &amp; VIP tiers earn a boosted points multiplier.</span>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Initial Password *</label>
         <input type="password" name="password" class="form-control" required>
       </div>
@@ -51,7 +61,7 @@
           <tr>
             <th>Code</th>
             <th>Member Details</th>
-            <th>Score</th>
+            <th>Points Earned</th>
             <th>Discount</th>
             <th>Earned Share</th>
             <th>Actions</th>
@@ -77,6 +87,12 @@
                     <input type="text" name="full_name" value="{{ m.full_name }}" class="form-control" style="margin-bottom: 0.4rem;" required>
                     <input type="email" name="email" value="{{ m.email }}" class="form-control" style="margin-bottom: 0.4rem;" required>
                     <input type="text" name="phone" value="{{ m.phone or '' }}" class="form-control" style="margin-bottom: 0.4rem;">
+                    <label class="form-label" style="font-size: 0.75rem;">Membership Tier</label>
+                    <select name="membership_type" class="form-control" style="margin-bottom: 0.4rem;">
+                      <option value="Member" {% if m.membership_type|lower == 'member' %}selected{% endif %}>Member (&times;1.0)</option>
+                      <option value="Premium" {% if m.membership_type|lower == 'premium' %}selected{% endif %}>Premium (&times;{{ settings.premium_multiplier }})</option>
+                      <option value="VIP" {% if m.membership_type|lower == 'vip' %}selected{% endif %}>VIP (&times;{{ settings.vip_multiplier }})</option>
+                    </select>
                     <button type="submit" class="btn btn-emerald btn-sm" style="width: 100%;">Save Changes</button>
                   </form>
                 </details>

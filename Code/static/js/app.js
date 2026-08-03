@@ -3,6 +3,7 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  initPointsCelebration();
   initGeoDrift();
   initMobileNav();
   initClientValidation();
@@ -570,4 +571,60 @@ function initAdminAnalytics() {
       }
     })
     .catch(err => console.error("Error loading analytics:", err));
+}
+
+// Points-logged celebration toast — triggered when a flash message
+// indicates points were earned (check-in, purchase, referral, receipt scan).
+// Matches the reference "Points Logged" design: bold red badge, scale-in,
+// slight rotation, auto-dismiss.
+function initPointsCelebration() {
+  const alerts = document.querySelectorAll('.alert');
+  if (!alerts.length) return;
+
+  alerts.forEach(alert => {
+    const text = alert.textContent || '';
+    // Look for point-related keywords in flash messages
+    const match = text.match(/\+?(\d+[\d,]*)\s*(?:pts|points|point)/i)
+               || text.match(/(\d+[\d,]*)\s*(?:points? earned|pts earned)/i);
+    if (!match) return;
+
+    const points = parseInt(match[1].replace(/[^0-9]/g, ''), 10);
+    if (!points || points <= 0) return;
+
+    showPointsToast(points);
+  });
+}
+
+function showPointsToast(points) {
+  // Create backdrop
+  const backdrop = document.createElement('div');
+  backdrop.className = 'points-toast-backdrop';
+  document.body.appendChild(backdrop);
+
+  // Create toast
+  const toast = document.createElement('div');
+  toast.className = 'points-toast';
+  toast.innerHTML = `
+    <div class="points-toast-inner">
+      <div class="points-toast-value">+${points} FS</div>
+      <div class="points-toast-label">Points Earned</div>
+    </div>`;
+  document.body.appendChild(toast);
+
+  // Dismiss after 2.2s with fade-out
+  const dismiss = () => {
+    const inner = toast.querySelector('.points-toast-inner');
+    if (inner) inner.classList.add('fade-out');
+    if (backdrop) backdrop.classList.add('fade-out');
+    setTimeout(() => {
+      if (toast.parentNode) toast.remove();
+      if (backdrop.parentNode) backdrop.remove();
+    }, 400);
+  };
+
+  setTimeout(dismiss, 2200);
+
+  // Click anywhere to dismiss early
+  const clickDismiss = () => { dismiss(); document.removeEventListener('click', clickDismiss); };
+  setTimeout(() => document.addEventListener('click', clickDismiss), 100);
 }

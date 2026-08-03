@@ -10,17 +10,21 @@
     <p style="color: var(--text-muted); font-size: 0.95rem;">Member Code: <code>{{ member.member_code }}</code> | Joined: {{ member.join_date[:10] }}</p>
   </div>
   <div style="display: flex; gap: 0.75rem;">
-    <a href="{{ url_for('member_scan') }}" class="btn btn-secondary">Go to Scanner &rarr;</a>
     <a href="{{ url_for('member_activity') }}" class="btn btn-primary">View My History</a>
   </div>
 </div>
 
 <!-- Stat Cards -->
-<div class="grid grid-cols-4" style="margin-bottom: 2rem;">
+<div class="grid grid-cols-4 dash-stats" style="margin-bottom: 2rem;">
   <div class="card stat-card blue">
     <span class="stat-label">Total Points Earned</span>
     <span class="stat-value">{{ "%.0f"|format(rewards.engagement_score) }}<span style="font-size: 0.55em; opacity: 0.85;"> pts</span></span>
     <span class="stat-desc">Visits, spending, referrals, facility use & loyalty</span>
+    <div class="stat-breakdown">
+      <span>{{ rewards.details.visit_count }} visits</span>
+      <span>${{ "%.0f"|format(rewards.details.total_spending) }} spending</span>
+      <span>{{ rewards.details.guest_referrals }} referrals</span>
+    </div>
   </div>
 
   <div class="card stat-card emerald">
@@ -42,6 +46,36 @@
   </div>
 </div>
 
+<!-- Points History -->
+<div class="card dash-points" style="margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <div>
+      <h3>Points History</h3>
+      <p style="color: var(--text-muted); font-size: 0.85rem;">Recent visits, purchases & referrals — each with the points it earned.</p>
+    </div>
+    <a href="{{ url_for('member_activity') }}" class="u-link" style="font-size: 0.9rem;">View All &rarr;</a>
+  </div>
+
+  <div class="points-feed">
+    {% for ev in points_history %}
+      <div class="points-feed-row">
+        <span class="points-feed-value {% if ev.activity_type == 'purchase' %}points-feed-value-emerald{% elif ev.activity_type == 'referral' %}points-feed-value-amber{% endif %}">
+          +{{ "%.0f"|format(ev.points) }}<span style="font-size: 0.6em; opacity: 0.8;"> pts</span>
+        </span>
+        <div style="flex: 1; min-width: 0;">
+          <p style="font-weight: 700; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ ev.service_name }}</p>
+          <p style="font-size: 0.72rem; color: var(--text-muted);">{{ ev.created_at[:10] }} &middot; {{ ev.created_at[11:16] }}</p>
+        </div>
+        <span class="badge {% if ev.activity_type == 'visit' %}badge-blue{% elif ev.activity_type == 'purchase' %}badge-emerald{% elif ev.activity_type == 'referral' %}badge-amber{% else %}badge-purple{% endif %}">
+          {{ ev.activity_type|title }}
+        </span>
+      </div>
+    {% else %}
+      <p style="color: var(--text-dim); text-align: center; padding: 1rem 0;">No point-earning activity yet — scan a facility barcode or record a purchase to get started.</p>
+    {% endfor %}
+  </div>
+</div>
+
 <!-- Scan Facility — prominent color-blocked CTA -->
 {% if active_checkin %}
   <div class="session-active" style="margin-bottom: 2rem; padding: 1.5rem;">
@@ -54,8 +88,7 @@
       <a href="{{ url_for('member_scan') }}" class="btn btn-primary" style="padding: 1rem 2rem; font-size: 1rem;">Open Scanner &rarr;</a>
     </div>
   </div>
-{% else %}
-  <a href="{{ url_for('member_scan') }}" class="card card-red" style="display: block; text-decoration: none; padding: 2rem; margin-bottom: 2rem;">
+{% else %}    <a href="{{ url_for('member_scan') }}" class="card card-red cta-pulse dash-cta-red" style="display: block; text-decoration: none; padding: 2rem; margin-bottom: 2rem;">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
       <div>
         <h3 style="font-size: 1.4rem; margin-bottom: 0.25rem;">Scan a Facility Barcode</h3>
@@ -66,40 +99,75 @@
   </a>
 {% endif %}
 
-<div class="grid grid-cols-2" style="gap: 1.5rem; margin-bottom: 2rem;">
-  <!-- Guest Pass Creation Card -->
-  <div class="card" style="grid-column: span 2;">
-    <h3>Create Guest Pass</h3>
-    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 0.85rem;">Generate Guest ID code to earn referral points!</p>
-    <form action="{{ url_for('member_guest_create') }}" method="POST">
-      <div class="form-group">
-        <input type="text" name="guest_name" class="form-control" placeholder="Guest Full Name" required style="font-size: 0.9rem; padding: 0.55rem;">
-      </div>
-      <button type="submit" class="btn btn-secondary btn-sm" style="width: 100%;">Generate Guest Pass</button>
-    </form>
+<!-- My Rewards — yellow color-blocked CTA (completes Bauhaus red/blue/yellow trio) -->
+<a href="{{ url_for('member_rewards') }}" class="card card-yellow dash-cta-yellow" style="display: block; text-decoration: none; padding: 2rem; margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h3 style="font-size: 1.4rem; margin-bottom: 0.25rem;">My Rewards</h3>
+      <p style="opacity: 0.9; font-size: 0.95rem;">{{ "%.0f"|format(rewards.discount_percentage) }}% personal discount · ${{ "%.2f"|format(rewards.earned_profit_share) }} earned profit share — redeem at checkout.</p>
+    </div>
+    <span class="btn" style="background: var(--on-tertiary); color: var(--tertiary); border-color: var(--border-glass); padding: 1rem 2rem; font-size: 1.05rem; white-space: nowrap;">View Rewards &rarr;</span>
+  </div>
+</a>
 
-    {% if guests %}
-      <div style="margin-top: 1rem; max-height: 170px; overflow-y: auto; font-size: 0.8rem;">
-        <span style="color: var(--text-dim); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;">Guest Passes — show the QR to your guest:</span>
-        {% for g in guests[:3] %}
-          <div style="display: flex; align-items: center; gap: 0.6rem; border-bottom: 3px solid var(--border-glass); padding: 0.4rem 0;">
-            <div class="guest-pass-qr"><div data-qr="{{ g.guest_code }}" data-qr-width="52"></div></div>
-            <div style="flex: 1;">
-              <p style="font-weight: 700; text-transform: uppercase;">{{ g.guest_name }}</p>
-              <code style="color: var(--ink); font-size: 0.72rem;">{{ g.guest_code }}</code>
-            </div>
-          </div>
-        {% endfor %}
+<div class="grid grid-cols-2" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Create Guest Pass — blue color-blocked CTA -->
+  <div class="card card-blue dash-cta-blue" style="grid-column: span 2; padding: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 2rem;">
+      <div style="flex: 1; min-width: 0;">
+        <h3 style="font-size: 1.4rem; margin-bottom: 0.25rem;">Create Guest Pass</h3>
+        <p style="opacity: 0.9; font-size: 0.95rem; margin-bottom: 1rem;">Generate a Guest ID code to earn referral points. Your guest scans the QR to sign in — all their activity credits your rewards.</p>
+        <form action="{{ url_for('member_guest_create') }}" method="POST" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <input type="text" name="guest_name" class="form-control" placeholder="Guest Full Name" required style="flex: 1; min-width: 180px; font-size: 0.9rem; padding: 0.65rem; background: var(--on-secondary); color: var(--secondary); border-color: var(--border-glass);">
+          <button type="submit" class="btn" style="background: var(--on-secondary); color: var(--secondary); border-color: var(--border-glass); padding: 0.65rem 1.5rem; white-space: nowrap;">Generate Pass &rarr;</button>
+        </form>
       </div>
-    {% endif %}
+
+      {% if guests %}
+        <div style="flex-shrink: 0; min-width: 200px; max-height: 200px; overflow-y: auto; font-size: 0.8rem;">
+          <span style="font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.65rem; opacity: 0.85;">Your Guest Passes</span>
+          {% for g in guests[:3] %}
+            <div style="display: flex; align-items: center; gap: 0.6rem; border-bottom: 2px solid var(--border-glass); padding: 0.5rem 0;">
+              <div class="guest-pass-qr" style="background: var(--on-secondary);"><div data-qr="{{ g.guest_code }}" data-qr-width="48"></div></div>
+              <div style="flex: 1; min-width: 0;">
+                <p style="font-weight: 700; text-transform: uppercase; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ g.guest_name }}</p>
+                <code style="font-size: 0.68rem; color: var(--ink);">{{ g.guest_code }}</code>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
   </div>
 </div>
 
 <!-- Recent Activity History Table -->
-<div class="card">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+<div class="card dash-table">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
     <h3>Recent Activity History</h3>
     <a href="{{ url_for('member_activity') }}" class="u-link" style="font-size: 0.9rem;">View All &rarr;</a>
+  </div>
+
+  <!-- Compact summary bar -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding: 0.6rem 0.9rem; background: var(--surface-dim); border: 3px solid var(--ink); gap: 1rem; flex-wrap: wrap;">
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <span style="font-weight: 800; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;">
+        {{ recent_activities|length }} activity {{ "entries" if recent_activities|length != 1 else "entry" }}
+      </span>
+      {% if recent_activities %}
+        <span style="color: var(--text-dim); font-size: 0.78rem; white-space: nowrap;">
+          Latest: {{ recent_activities[0].created_at[:10] }}
+        </span>
+      {% endif %}
+    </div>
+    {% if recent_activities %}
+      <div class="sparkline" style="display: flex; align-items: flex-end; gap: 3px; height: 28px;">
+        {% for act in recent_activities|reverse %}
+          {% set height_pct = ((act.transaction_value / (recent_activities|map(attribute='transaction_value')|max or 1)) * 100)|round|int %}
+          <div class="sparkline-bar" style="width: 8px; height: {{ [height_pct, 5]|max }}%;" title="{{ act.service_name }}: ${{ '%.2f'|format(act.transaction_value) }}" data-value="{{ '%.2f'|format(act.transaction_value) }}"></div>
+        {% endfor %}
+      </div>
+    {% endif %}
   </div>
 
   <div class="table-container">
