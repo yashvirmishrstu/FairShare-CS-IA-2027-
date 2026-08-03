@@ -341,7 +341,15 @@ class ReceiptManager:
             conn.close()
             return {'ok': False, 'message': f'Receipt {receipt_code} has already been scanned and logged.'}
 
-        cursor.execute("UPDATE receipts SET status = 'scanned', scanned_by_member = ?, scanned_at = datetime('now') WHERE id = ?", (member_id, receipt['id']))
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Atomic deduplication: only one request can flip status unscanned->scanned.
+        cursor.execute('''
+            UPDATE receipts SET status = 'scanned', scanned_by_member = ?, scanned_at = ?
+            WHERE id = ? AND status = 'unscanned'
+        ''', (member_id, now_str, receipt['id']))
+        if cursor.rowcount == 0:
+            conn.close()
+            return {'ok': False, 'message': f'Receipt {receipt_code} has already been scanned and logged.'}
         cursor.execute('''
             INSERT INTO activities (member_id, activity_type, service_name, transaction_value)
             VALUES (?, 'purchase', ?, ?)
@@ -365,7 +373,15 @@ class ReceiptManager:
             conn.close()
             return {'ok': False, 'message': f'Receipt {receipt_code} has already been scanned and logged.'}
 
-        cursor.execute("UPDATE receipts SET status = 'scanned', scanned_by_guest = ?, scanned_at = datetime('now') WHERE id = ?", (guest_id, receipt['id']))
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Atomic deduplication: only one request can flip status unscanned->scanned.
+        cursor.execute('''
+            UPDATE receipts SET status = 'scanned', scanned_by_guest = ?, scanned_at = ?
+            WHERE id = ? AND status = 'unscanned'
+        ''', (guest_id, now_str, receipt['id']))
+        if cursor.rowcount == 0:
+            conn.close()
+            return {'ok': False, 'message': f'Receipt {receipt_code} has already been scanned and logged.'}
         cursor.execute('''
             INSERT INTO guest_activities (guest_id, activity_type, service_name, transaction_value)
             VALUES (?, 'purchase', ?, ?)

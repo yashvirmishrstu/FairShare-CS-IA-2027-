@@ -3,13 +3,30 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  initThemeToggle();
+  initGeoDrift();
+  initMobileNav();
   initClientValidation();
   initBarcodeAndQRCodes();
   initFacilityScanner();
+  initReceiptScanner();
   initGuestLogin();
   initAuthTabs();
   initAdminAnalytics();
 });
+
+// Mobile navigation hamburger toggle
+function initMobileNav() {
+  const toggle = document.getElementById('nav-toggle');
+  const links = document.getElementById('nav-links');
+  if (!toggle || !links) return;
+  const icon = toggle.querySelector('.nav-toggle-icon');
+  toggle.addEventListener('click', () => {
+    const open = links.classList.toggle('open');
+    if (icon) icon.textContent = open ? '✕' : '☰';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+}
 
 // Unified login page: switch between Member/Admin and Guest sign-in panels
 function initAuthTabs() {
@@ -181,6 +198,112 @@ function initSessionTimer() {
   setInterval(render, 1000);
 }
 
+// Receipt QR Expense Scanner (member/expenses + guest/dashboard)
+// Members & guests scan the QR printed at the end of a receipt to log the
+// expense automatically. Codes look like RCPT-1A2B3C.
+function initReceiptScanner() {
+  const form = document.getElementById('receipt-scanner-form');
+  const input = document.getElementById('receipt-code-input');
+  if (!form) return;
+
+  // Guard against rapid double-scans
+  form.addEventListener('submit', () => {
+    form.dataset.submitting = '1';
+    document.querySelectorAll('[data-receipt-code]').forEach(b => { b.disabled = true; });
+  });
+
+  // Keep the scan input focused for rapid successive scans
+  const card = document.getElementById('receipt-scanner-card');
+  if (card) {
+    card.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && input) {
+        input.focus();
+      }
+    });
+  }
+
+  // Simulated scans (demo receipt cards)
+  document.querySelectorAll('[data-receipt-code]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      playScanBeep(660, 0.1);
+      submitReceiptScan(btn.getAttribute('data-receipt-code'));
+    });
+  });
+
+  const clearBtn = document.getElementById('receipt-clear-scanner');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => { if (input) { input.value = ''; input.focus(); } });
+  }
+
+  // Optional webcam QR scanning (graceful fallback to manual entry)
+  const toggleBtn = document.getElementById('receipt-camera-toggle');
+  const viewport = document.getElementById('receipt-camera-viewport');
+  const toast = document.getElementById('receipt-scan-toast');
+  if (!toggleBtn || !viewport) return;
+
+  const labelOn = toggleBtn.getAttribute('data-label-on') || 'Use Camera';
+  let scanner = null;
+
+  const showToast = (msg) => {
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.hidden = false;
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => { toast.hidden = true; }, 4500);
+  };
+
+  toggleBtn.addEventListener('click', async () => {
+    if (scanner) {
+      try { await scanner.stop(); } catch (e) {}
+      scanner = null;
+      viewport.style.display = 'none';
+      toggleBtn.textContent = labelOn;
+      return;
+    }
+
+    if (typeof Html5Qrcode === 'undefined') {
+      showToast('Camera scanning library could not be loaded. Enter the RCPT code manually.');
+      return;
+    }
+
+    viewport.style.display = 'block';
+    scanner = new Html5Qrcode('receipt-camera-viewport');
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        (decodedText) => {
+          playScanBeep(880, 0.12);
+          submitReceiptScan(decodedText.trim().toUpperCase());
+        },
+        () => {}
+      );
+      toggleBtn.textContent = 'Stop Camera';
+    } catch (err) {
+      showToast('Camera is unavailable or permission was denied. Enter the RCPT code manually.');
+      viewport.style.display = 'none';
+      scanner = null;
+      toggleBtn.textContent = labelOn;
+    }
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (scanner) scanner.stop().catch(() => {});
+  });
+}
+
+function submitReceiptScan(code) {
+  const input = document.getElementById('receipt-code-input');
+  const form = document.getElementById('receipt-scanner-form');
+  if (!form || form.dataset.submitting === '1') return;
+  form.dataset.submitting = '1';
+  document.querySelectorAll('[data-receipt-code]').forEach(b => { b.disabled = true; });
+  if (input) input.value = code;
+  form.requestSubmit();
+  // Safety reset in case navigation stalls
+  setTimeout(() => { form.dataset.submitting = '0'; }, 1500);
+}
+
 // Guest day-pass sign-in: scan the Guest Pass QR code or enter the code manually
 function initGuestLogin() {
   const form = document.getElementById('guest-login-form');
@@ -313,6 +436,47 @@ function initCameraScanner() {
 
   window.addEventListener('beforeunload', () => {
     if (scanner) scanner.stop().catch(() => {});
+  });
+}
+
+// Theme toggle — dark/inverse Constructivist mode, persisted to localStorage
+function initThemeToggle() {
+  const toggle = document.getElementById('theme-toggle');
+  if (!toggle) return;
+  const icon = toggle.querySelector('.theme-toggle-icon');
+
+  const apply = (theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (icon) icon.textContent = theme === 'dark' ? '◑' : '◐';
+    try { localStorage.setItem('fairshare-theme', theme); } catch (e) {}
+  };
+
+  const stored = (() => { try { return localStorage.getItem('fairshare-theme'); } catch (e) { return null; } })();
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  apply(stored || (prefersDark ? 'dark' : 'light'));
+
+  toggle.addEventListener('click', () => {
+    apply(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+}
+
+// Animated geometric background motifs — Bauhaus shapes drift in a gentle
+// orbital pattern using sin/cos, matching the reference code.html design.
+function initGeoDrift() {
+  const shapes = document.querySelectorAll('.geo[data-geo-speed]');
+  if (!shapes.length) return;
+
+  shapes.forEach((shape) => {
+    const speed = parseFloat(shape.getAttribute('data-geo-speed')) || 1.0;
+    const baseSpeed = speed * 0.04;
+    let pos = 0;
+    const drift = () => {
+      pos += baseSpeed;
+      shape.style.transform =
+        `translate(${Math.sin(pos) * 18}px, ${Math.cos(pos) * 18}px) rotate(${pos * 4}deg)`;
+      requestAnimationFrame(drift);
+    };
+    requestAnimationFrame(drift);
   });
 }
 

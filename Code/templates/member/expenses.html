@@ -55,9 +55,9 @@
                 <div class="facility-qr"><div data-qr="{{ r.receipt_code }}" data-qr-width="52"></div></div>
                 <span class="facility-code">{{ r.receipt_code }}</span>
               </div>
-              <div style="text-align: left; flex: 1;">
-                <p style="font-weight: 700; font-size: 0.85rem; text-transform: uppercase;">{{ r.service_name }}</p>
-                <p style="color: var(--text-dim); font-size: 0.75rem;">${{ "%.2f"|format(r.amount) }} · tap to log &rarr;</p>
+              <div class="facility-ticket-body">
+                <p class="facility-ticket-name">{{ r.service_name }}</p>
+                <p class="facility-ticket-hint">${{ "%.2f"|format(r.amount) }} · tap to log &rarr;</p>
               </div>
             </button>
           {% endfor %}

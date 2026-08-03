@@ -84,9 +84,9 @@
             <svg class="facility-barcode" data-barcode="{{ code }}" data-height="38" data-display="false"></svg>
             <span class="facility-code">{{ code }}</span>
           </div>
-          <div style="text-align: left; flex: 1;">
-            <p style="font-weight: 700; font-size: 0.9rem; text-transform: uppercase;">{{ name }}</p>
-            <p style="color: var(--text-dim); font-size: 0.75rem;">Tap to scan &rarr;</p>
+          <div class="facility-ticket-body">
+            <p class="facility-ticket-name">{{ name }}</p>
+            <p class="facility-ticket-hint">Tap to scan &rarr;</p>
           </div>
           <div class="facility-qr"><div data-qr="{{ code }}" data-qr-width="72"></div></div>
         </button>

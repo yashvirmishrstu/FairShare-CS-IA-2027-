@@ -254,6 +254,165 @@ def test_guest_day_pass_expires_next_day(client):
     assert b'Member / Admin' in response.data
     assert b'Guest Pass Code' in response.data
 
+def test_admin_issues_receipt_and_member_scans(client):
+    """Admin issues an expense receipt QR; member scans it to log the expense."""
+    # Admin issues a receipt voucher
+    client.post('/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=True)
+    response = client.post('/admin/receipts/issue', data={
+        'service_name': 'Restaurant Dining', 'amount': '42.75'
+    }, follow_redirects=True)
+    assert b'Receipt issued' in response.data
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM receipts WHERE service_name = 'Restaurant Dining' ORDER BY id DESC LIMIT 1")
+    receipt = cursor.fetchone()
+    conn.close()
+    receipt_code = receipt['receipt_code']
+    assert receipt_code.startswith('RCPT-')
+    assert receipt['status'] == 'unscanned'
+
+    # Member logs in and scans the receipt QR
+    client.get('/logout')
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    response = client.post('/member/receipts/scan', data={'receipt_code': receipt_code}, follow_redirects=True)
+    assert b'logged from receipt' in response.data
+    assert b'Restaurant Dining' in response.data
+
+    # Expense appears in the member's purchase ledger
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT COUNT(*) FROM activities a
+        JOIN members m ON a.member_id = m.id
+        WHERE m.full_name = 'Alice Johnson' AND a.activity_type = 'purchase' AND a.service_name = 'Restaurant Dining'
+    ''')
+    assert cursor.fetchone()[0] == 1
+    # Receipt marked scanned
+    cursor.execute("SELECT status FROM receipts WHERE id = ?", (receipt['id'],))
+    assert cursor.fetchone()['status'] == 'scanned'
+    conn.close()
+
+    # Member expenses page renders with the ledger
+    response = client.get('/member/expenses')
+    assert response.status_code == 200
+    assert b'Track Expenses by Receipt' in response.data
+    assert receipt_code.encode() in response.data
+
+def test_receipt_deduplication_and_validation(client):
+    """A receipt QR can only be scanned once; invalid codes are rejected."""
+    client.post('/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=True)
+    client.post('/admin/receipts/issue', data={'service_name': 'Pro Shop', 'amount': '18.99'}, follow_redirects=True)
+    client.get('/logout')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT receipt_code FROM receipts WHERE service_name = 'Pro Shop' ORDER BY id DESC LIMIT 1")
+    receipt_code = cursor.fetchone()['receipt_code']
+    conn.close()
+
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+
+    # First scan succeeds
+    response = client.post('/member/receipts/scan', data={'receipt_code': receipt_code}, follow_redirects=True)
+    assert b'logged from receipt' in response.data
+
+    # Second scan rejected (deduplication)
+    response = client.post('/member/receipts/scan', data={'receipt_code': receipt_code}, follow_redirects=True)
+    assert b'already been scanned' in response.data
+
+    # Invalid code rejected
+    response = client.post('/member/receipts/scan', data={'receipt_code': 'RCPT-NOPE'}, follow_redirects=True)
+    assert b'Invalid receipt code' in response.data
+
+    # Empty code -> warning
+    response = client.post('/member/receipts/scan', data={'receipt_code': ''}, follow_redirects=True)
+    assert b'No receipt QR detected' in response.data
+
+def test_guest_scans_receipt_credits_host(client):
+    """Guest scanning a receipt QR credits the expense to their host member."""
+    # Alice creates a guest pass
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    client.post('/member/guest/create', data={'guest_name': 'Diana Day'}, follow_redirects=True)
+    client.get('/logout')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, guest_code, host_member_id FROM guest_ids WHERE guest_name = 'Diana Day' ORDER BY id DESC LIMIT 1")
+    guest = cursor.fetchone()
+    conn.close()
+
+    # Admin issues a receipt
+    client.post('/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=True)
+    client.post('/admin/receipts/issue', data={'service_name': 'Spa Retreat', 'amount': '95.00'}, follow_redirects=True)
+    client.get('/logout')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT receipt_code FROM receipts WHERE service_name = 'Spa Retreat' ORDER BY id DESC LIMIT 1")
+    receipt_code = cursor.fetchone()['receipt_code']
+    conn.close()
+
+    # Guest signs in and scans the receipt QR
+    client.post('/login', data={'guest_code': guest['guest_code']}, follow_redirects=True)
+    response = client.post('/guest/receipts/scan', data={'receipt_code': receipt_code}, follow_redirects=True)
+    assert b'credited to your host member' in response.data
+
+    # Guest ledger holds the purchase; host rewards reflect the guest spending
+    summary = EngagementEngine.calculate_engagement_score(guest['host_member_id'])
+    assert summary['guest_spending'] >= 95.00
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM guest_activities WHERE guest_id = ? AND activity_type = 'purchase' AND service_name = 'Spa Retreat'", (guest['id'],))
+    assert cursor.fetchone()[0] == 1
+    conn.close()
+
+    # Guest dashboard renders the Scan Receipt QR card
+    response = client.get('/guest/dashboard')
+    assert response.status_code == 200
+    assert b'Scan Receipt QR' in response.data
+
+def test_receipt_cross_role_dedup_and_admin_validation(client):
+    """A receipt scanned by a guest is then rejected for a member; admin
+    issue route validates service name and amount."""
+    # Admin issue validation: blank service rejected, non-positive amount rejected
+    client.post('/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=True)
+    response = client.post('/admin/receipts/issue', data={'service_name': '', 'amount': '10.00'}, follow_redirects=True)
+    assert b'Please describe the service' in response.data
+    response = client.post('/admin/receipts/issue', data={'service_name': 'Gift Shop', 'amount': '0.00'}, follow_redirects=True)
+    assert b'greater than zero' in response.data
+    response = client.post('/admin/receipts/issue', data={'service_name': 'Gift Shop', 'amount': '-5.00'}, follow_redirects=True)
+    assert b'greater than zero' in response.data
+    client.get('/logout')
+
+    # Alice creates a guest pass and a receipt is issued
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    client.post('/member/guest/create', data={'guest_name': 'Cora Cross'}, follow_redirects=True)
+    client.get('/logout')
+    client.post('/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=True)
+    client.post('/admin/receipts/issue', data={'service_name': 'Tennis Pro Shop', 'amount': '55.00'}, follow_redirects=True)
+    client.get('/logout')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT receipt_code FROM receipts WHERE service_name = 'Tennis Pro Shop' ORDER BY id DESC LIMIT 1")
+    receipt_code = cursor.fetchone()['receipt_code']
+    cursor.execute("SELECT guest_code FROM guest_ids WHERE guest_name = 'Cora Cross' ORDER BY id DESC LIMIT 1")
+    guest_code = cursor.fetchone()['guest_code']
+    conn.close()
+
+    # Guest scans it first
+    client.post('/login', data={'guest_code': guest_code}, follow_redirects=True)
+    response = client.post('/guest/receipts/scan', data={'receipt_code': receipt_code}, follow_redirects=True)
+    assert b'credited to your host member' in response.data
+    client.get('/logout')
+
+    # Member attempting the same receipt is now rejected (cross-role dedup)
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    response = client.post('/member/receipts/scan', data={'receipt_code': receipt_code}, follow_redirects=True)
+    assert b'already been scanned' in response.data
+
 def test_member_scan_checkin_checkout_flow(client):
     client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
 

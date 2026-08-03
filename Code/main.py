@@ -450,8 +450,8 @@ def admin_receipt_issue():
 
     if not service_name:
         flash('Please describe the service on the receipt.', 'warning')
-    elif amount < 0:
-        flash('Receipt amount cannot be negative.', 'danger')
+    elif amount <= 0:
+        flash('Receipt amount must be greater than zero.', 'danger')
     else:
         receipt = ReceiptManager.issue_receipt(service_name, amount)
         flash(f'Receipt issued! Code {receipt["receipt_code"]} — show the QR so the member can scan it.', 'success')
