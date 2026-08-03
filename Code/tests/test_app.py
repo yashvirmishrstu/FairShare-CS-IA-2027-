@@ -1,8 +1,9 @@
 import pytest
 import os
+import re
 from main import app
 from database import init_db, get_db
-from models import EngagementEngine, RewardSettings
+from models import EngagementEngine, RewardSettings, MarketplaceManager
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -253,6 +254,233 @@ def test_guest_day_pass_expires_next_day(client):
     assert b'day pass has expired' in response.data
     assert b'Sign In' in response.data
     assert b'Sign In' in response.data
+
+def test_member_marketplace_page_renders(client):
+    """Member marketplace page shows spendable points, coupon catalog, and
+    the yearly fee credit panel."""
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    response = client.get('/member/marketplace')
+    assert response.status_code == 200
+    assert b'Points Marketplace' in response.data
+    assert b'Spendable Points' in response.data
+    assert b'Coupon Catalog' in response.data
+    assert b'Yearly Membership Fee' in response.data
+    # Seeded demo coupons are listed
+    assert b'Gym Day Pass' in response.data
+    assert b'Claim for' in response.data
+
+
+def test_member_marketplace_claim_flow(client):
+    """Member claims a coupon from the marketplace — points are deducted and
+    the coupon code appears in the My Coupons section."""
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+    EngagementEngine.recalculate_all()
+    coupon = MarketplaceManager.get_active_coupons()[0]
+
+    response = client.post('/member/marketplace/claim', data={'coupon_id': coupon['id']}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Coupon claimed' in response.data
+
+    # Coupon shows in My Coupons with its QR code
+    claimed = MarketplaceManager.get_member_coupons(alice_id)
+    assert len(claimed) == 1
+    assert claimed[0]['coupon_code'] in response.data.decode()
+    assert b'My Coupons' in response.data
+
+    # Balance reduced
+    rewards = EngagementEngine.view_member_rewards(alice_id)
+    assert rewards['points_spent'] == coupon['cost_points']
+
+
+def test_member_marketplace_fee_credit_flow(client):
+    """Member credits points against the yearly fee from the marketplace."""
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+    EngagementEngine.recalculate_all()
+
+    response = client.post('/member/marketplace/fee', data={'points': '100'}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'pts converted to' in response.data
+
+    fee = MarketplaceManager.get_member_fee(alice_id)
+    assert fee['fee_points_applied'] > 0
+    assert fee['remaining'] < fee['yearly_fee']
+
+
+def test_member_marketplace_rejects_overdraft(client):
+    """Claiming an unaffordable coupon or over-crediting the fee is rejected."""
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+    EngagementEngine.recalculate_all()
+
+    # Drain Alice's balance via the ledger
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT engagement_score FROM rewards WHERE member_id = ?", (alice_id,))
+    earned = cursor.fetchone()['engagement_score']
+    cursor.execute("INSERT INTO point_transactions (member_id, points_delta, reason) VALUES (?, ?, ?)",
+                   (alice_id, -earned, 'Test drain'))
+    conn.commit()
+    conn.close()
+
+    coupon = MarketplaceManager.get_active_coupons()[0]
+    response = client.post('/member/marketplace/claim', data={'coupon_id': coupon['id']}, follow_redirects=True)
+    assert b'Insufficient points' in response.data
+
+    response = client.post('/member/marketplace/fee', data={'points': '10'}, follow_redirects=True)
+    assert b'points available' in response.data
+
+
+def test_redeem_recreates_stable_voucher_and_preserves_marketplace_access(client):
+    """Redeeming a voucher must create exactly one fresh active voucher that
+    survives reloads, while coupon claims and fee credits still work after the
+    old voucher is marked redeemed."""
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+
+    # Materialize the initial voucher so this test exercises the actual
+    # redeemed -> replacement transition rather than the first-ever creation.
+    EngagementEngine.recalculate_all(force=True)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT redemption_code FROM rewards WHERE member_id = ? AND status = 'active'", (alice_id,))
+    original_code = cursor.fetchone()['redemption_code']
+    conn.close()
+
+    response = client.get('/member/rewards')
+    assert response.status_code == 200
+    assert original_code.encode() in response.data
+
+    # Redeem the active voucher. The route must persist a replacement row.
+    response = client.post('/member/rewards', follow_redirects=True)
+    assert response.status_code == 200
+    # The flash text is HTML-escaped in the rendered page; assert its stable
+    # unescaped prefix rather than coupling this test to template escaping.
+    assert b'Voucher code generated' in response.data
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT redemption_code, status FROM rewards WHERE member_id = ? ORDER BY id", (alice_id,))
+    reward_rows = cursor.fetchall()
+    cursor.execute("SELECT redemption_code FROM rewards WHERE member_id = ? AND status = 'active'", (alice_id,))
+    active_code = cursor.fetchone()['redemption_code']
+    cursor.execute("SELECT pending FROM rewards_recompute WHERE id = 1")
+    pending = cursor.fetchone()['pending']
+    conn.close()
+
+    assert len(reward_rows) == 2
+    assert [row['status'] for row in reward_rows] == ['redeemed', 'active']
+    assert active_code != original_code
+    assert pending == 0
+
+    # Reloading must keep the exact persisted replacement code, not generate a
+    # new code on every read.
+    for reload_response in (client.get('/member/rewards'), client.get('/member/rewards')):
+        assert reload_response.status_code == 200
+        match = re.search(rb'data-qr="(FS-RED-[A-Z0-9]{8})"', reload_response.data)
+        assert match is not None
+        assert match.group(1).decode() == active_code
+
+    # The member can still spend points after redeeming the old voucher.
+    coupon = next(c for c in MarketplaceManager.get_active_coupons() if c['name'] == 'Gym Day Pass')
+    response = client.post('/member/marketplace/claim', data={'coupon_id': coupon['id']}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Coupon claimed' in response.data
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM member_coupons WHERE member_id = ?", (alice_id,))
+    assert cursor.fetchone()[0] == 1
+    conn.close()
+
+    # Fee credit must also continue to use the live earned score after redeem.
+    response = client.post('/member/marketplace/fee', data={'points': '10'}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'pts converted to' in response.data
+
+    fee = MarketplaceManager.get_member_fee(alice_id)
+    settings = RewardSettings.get_settings()
+    assert fee['fee_points_applied'] == round(10 * settings['points_value_dollars'], 2)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT points_delta FROM point_transactions WHERE member_id = ? AND reason = 'Yearly membership fee credit'", (alice_id,))
+    fee_transaction = cursor.fetchone()
+    conn.close()
+    assert fee_transaction is not None
+    assert fee_transaction['points_delta'] == -10
+
+    # Marketplace spending must not destroy the replacement voucher.
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM rewards WHERE member_id = ? AND status = 'active'", (alice_id,))
+    assert cursor.fetchone()[0] == 1
+    conn.close()
+
+
+def test_admin_marketplace_manages_coupons(client):
+    """Admin can add a coupon and toggle its availability."""
+    client.post('/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=True)
+
+    # Add a coupon
+    response = client.post('/admin/marketplace', data={
+        'action': 'add',
+        'name': 'Yoga Class Pass',
+        'description': 'One yoga class session in the wellness studio.',
+        'category': 'Events',
+        'cost_points': '45',
+        'value_amount': '12',
+        'facility_name': '',
+    }, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Yoga Class Pass' in response.data
+    assert b'added to the marketplace' in response.data
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM coupons WHERE name = 'Yoga Class Pass'")
+    coupon = cursor.fetchone()
+    conn.close()
+    assert coupon is not None
+    assert coupon['active'] == 1
+
+    # Toggle it off
+    response = client.post('/admin/marketplace', data={'action': 'toggle', 'coupon_id': coupon['id']}, follow_redirects=True)
+    assert b'deactivated' in response.data
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT active FROM coupons WHERE id = ?", (coupon['id'],))
+    assert cursor.fetchone()['active'] == 0
+    conn.close()
+
+    # No longer appears for members
+    client.get('/logout')
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    response = client.get('/member/marketplace')
+    assert b'Yoga Class Pass' not in response.data
+
 
 def test_admin_issues_receipt_and_member_scans(client):
     """Admin issues an expense receipt QR; member scans it to log the expense."""

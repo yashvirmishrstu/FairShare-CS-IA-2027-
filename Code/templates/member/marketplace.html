@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Points Marketplace - {{ member.full_name }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+  <div>
+    <span class="badge badge-black" style="margin-bottom: 0.5rem;">Points Marketplace</span>
+    <h1 style="font-size: 2.2rem;">Spend your points, your way</h1>
+    <p style="color: var(--text-muted); font-size: 0.95rem;">
+      Claim coupons for facilities &amp; discounts, or credit points straight off your yearly membership fee.
+    </p>
+  </div>
+  <div class="card stat-card purple" style="min-width: 240px; margin: 0;">
+    <span class="stat-label">Spendable Points</span>
+    <span class="stat-value">{{ "%.0f"|format(rewards.points_balance) }}<span style="font-size: 0.55em; opacity: 0.85;"> pts</span></span>
+    <span class="stat-desc">{{ "%.1f"|format(rewards.engagement_score) }} lifetime earned &middot; {{ "%.1f"|format(rewards.points_spent) }} spent</span>
+  </div>
+</div>
+
+<!-- Yearly Fee Credit Banner -->
+<div class="card {% if fee and fee.fee_paid %}card-emerald{% else %}card-yellow{% endif %}" style="padding: 1.75rem; margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.25rem;">
+    <div style="flex: 1; min-width: 260px;">
+      <h3 style="font-size: 1.3rem; margin-bottom: 0.35rem;">Yearly Membership Fee</h3>
+      {% if fee %}
+        <p style="opacity: 0.9; font-size: 0.92rem; margin-bottom: 0.5rem;">
+          Annual fee <strong>${{ "%.2f"|format(fee.yearly_fee) }}</strong>
+          {% if fee.fee_points_applied > 0 %} &middot; ${{ "%.2f"|format(fee.fee_points_applied) }} already credited by points{% endif %}
+        </p>
+        {% if fee.fee_paid %}
+          <span class="badge badge-emerald" style="font-size: 0.85rem;">Paid in full &mdash; thank you!</span>
+        {% else %}
+          <p style="opacity: 0.9; font-size: 0.92rem;">
+            Balance due: <strong>${{ "%.2f"|format(fee.remaining) }}</strong>
+            &middot; each point is worth <strong>${{ "%.2f"|format(fee.points_value_dollars) }}</strong>
+          </p>
+          <form action="{{ url_for('member_marketplace_fee') }}" method="POST" style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.75rem;">
+            <input type="number" name="points" min="1" step="1" class="form-control"
+                   placeholder="Points to credit"
+                   style="max-width: 190px; font-size: 0.9rem; padding: 0.65rem;"
+                   {% if rewards.points_balance <= 0 %}disabled{% endif %} required>
+            <button type="submit" class="btn btn-primary" {% if rewards.points_balance <= 0 %}disabled{% endif %}>
+              Credit Points Toward Fee &rarr;
+            </button>
+          </form>
+        {% endif %}
+      {% else %}
+        <p style="opacity: 0.9;">Fee details unavailable.</p>
+      {% endif %}
+    </div>
+    {% if fee and not fee.fee_paid %}
+      <div style="text-align: right; flex-shrink: 0;">
+        <span style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.8;">Balance due</span>
+        <div style="font-size: 2.2rem; font-weight: 900; line-height: 1.1;">${{ "%.2f"|format(fee.remaining) }}</div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Coupon Catalog -->
+<div style="margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <div>
+      <h3>Coupon Catalog</h3>
+      <p style="color: var(--text-muted); font-size: 0.85rem;">Facility passes, dining vouchers &amp; discounts &mdash; funded by the club reward pool.</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-4" style="gap: 1.25rem;">
+    {% for c in coupons %}
+      {% set affordable = rewards.points_balance >= c.cost_points %}
+      <div class="coupon-card card {% if not affordable %}coupon-locked{% endif %}" style="display: flex; flex-direction: column; padding: 1.25rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+          <span class="badge
+            {% if c.category == 'Facility' %}badge-blue
+            {% elif c.category == 'Dining' %}badge-emerald
+            {% elif c.category == 'Pro Shop' %}badge-amber
+            {% elif c.category == 'Membership' %}badge-purple
+            {% else %}badge-black{% endif %}">{{ c.category }}</span>
+          {% if c.value_amount > 0 %}
+            <span style="font-size: 0.78rem; font-weight: 800; color: var(--text-muted);">worth ${{ "%.0f"|format(c.value_amount) }}</span>
+          {% endif %}
+        </div>
+        <h4 style="font-size: 1.05rem; margin-bottom: 0.35rem; line-height: 1.25;">{{ c.name }}</h4>
+        <p style="color: var(--text-muted); font-size: 0.82rem; flex: 1; margin-bottom: 1rem;">{{ c.description }}</p>
+        {% if c.facility_name %}<p style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.75rem;">&rarr; {{ c.facility_name }}</p>{% endif %}
+
+        <form action="{{ url_for('member_marketplace_claim') }}" method="POST" style="margin-top: auto;">
+          <input type="hidden" name="coupon_id" value="{{ c.id }}">
+          <button type="submit" class="btn {% if affordable %}btn-emerald{% else %}btn-secondary{% endif %}" style="width: 100%;" {% if not affordable %}disabled{% endif %}>
+            {% if affordable %}Claim for {{ "%.0f"|format(c.cost_points) }} pts{% else %}Need {{ "%.0f"|format(c.cost_points) }} pts{% endif %}
+          </button>
+        </form>
+      </div>
+    {% else %}
+      <p style="color: var(--text-dim); grid-column: span 4; text-align: center; padding: 2rem 0;">The marketplace is being stocked &mdash; check back soon.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="grid grid-cols-2" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- My Coupons -->
+  <div class="card" style="grid-column: span 1;">
+    <h3 style="margin-bottom: 1rem;">My Coupons</h3>
+    {% if my_coupons %}
+      <div style="display: grid; gap: 1rem;">
+        {% for mc in my_coupons %}
+          <div style="display: flex; align-items: center; gap: 1rem; background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 0.9rem;">
+            <div style="background: #fff; border: 3px solid var(--border-glass); padding: 0.35rem; flex-shrink: 0;">
+              <div data-qr="{{ mc.coupon_code }}" data-qr-width="72"></div>
+            </div>
+            <div style="flex: 1; min-width: 0;">
+              <p style="font-weight: 800; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ mc.name }}</p>
+              <code style="font-size: 0.72rem; color: var(--ink);">{{ mc.coupon_code }}</code>
+              <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">
+                {{ "%.0f"|format(mc.points_spent) }} pts &middot; {{ mc.claimed_at[:10] }}
+                &middot; <span class="{% if mc.status == 'active' %}badge-emerald{% else %}badge-black{% endif %}" style="font-weight:800;">{{ mc.status|title }}</span>
+              </p>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p style="color: var(--text-dim); text-align: center; padding: 1.5rem 0;">No coupons claimed yet &mdash; grab one above!</p>
+    {% endif %}
+  </div>
+
+  <!-- Points Ledger -->
+  <div class="card" style="grid-column: span 1;">
+    <h3 style="margin-bottom: 1rem;">Points Ledger</h3>
+    {% if transactions %}
+      <div style="display: grid; gap: 0.6rem; max-height: 320px; overflow-y: auto;">
+        {% for t in transactions %}
+          <div style="display: flex; justify-content: space-between; align-items: center; background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 0.65rem 0.9rem;">
+            <div style="min-width: 0;">
+              <p style="font-weight: 700; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.reason }}</p>
+              <p style="font-size: 0.7rem; color: var(--text-muted);">{{ t.created_at[:10] }} &middot; {{ t.created_at[11:16] }}</p>
+            </div>
+            <span style="font-weight: 900; font-size: 0.95rem; color: var(--primary); flex-shrink: 0;">&minus;{{ "%.0f"|format(-t.points_delta) }} pts</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p style="color: var(--text-dim); text-align: center; padding: 1.5rem 0;">No points spent yet &mdash; your balance is fully available.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Back link -->
+<div style="text-align: center;">
+  <a href="{{ url_for('member_rewards') }}" class="u-link" style="font-size: 0.9rem;">View my discount &amp; redemption voucher &rarr;</a>
+</div>
+{% endblock %}

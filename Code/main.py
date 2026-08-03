@@ -6,7 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from config import Config
 from database import get_db, init_db
-from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManager, ReceiptManager, CSVReportGenerator
+from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManager, ReceiptManager, CSVReportGenerator, MarketplaceManager
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -139,7 +139,6 @@ def guest_quick():
                 session['guest_id'] = guest['id']
                 session['guest_login_date'] = today
                 GuestManager.record_spending(guest['id'], service_name, amount)
-                EngagementEngine.recalculate_all()
                 settings = RewardSettings.get_settings()
                 pts = int(round(amount * settings['spending_weight']))
                 flash(f'Welcome, {guest["guest_name"]}! Purchase of ${amount:.2f} recorded — +{pts} pts credited to your host member.', 'success')
@@ -224,7 +223,6 @@ def guest_scan():
             if active['facility_name'] == facility_name:
                 duration = FacilityTracker.check_out(active['id'])
                 if duration:
-                    EngagementEngine.recalculate_all()
                     settings = RewardSettings.get_settings()
                     visit_pts = int(round(settings['visit_weight']))
                     facility_pts = int(round(duration * settings['facility_weight']))
@@ -341,7 +339,8 @@ def member_dashboard():
         flash('Member profile not found.', 'danger')
         return redirect(url_for('index'))
 
-    # Calculate current reward details (read-only view — GET never writes)
+    # Rewards view — lazily materializes only when a scoring write happened
+    # (the dirty flag is set by SQLite triggers); otherwise a pure read.
     rewards = EngagementEngine.view_member_rewards(member['id'])
 
     # Recent activities
@@ -446,7 +445,6 @@ def member_scan():
                 if active['facility_name'] == facility_name:
                     duration = FacilityTracker.check_out(active['id'])
                     if duration:
-                        EngagementEngine.recalculate_all()
                         settings = RewardSettings.get_settings()
                         visit_pts = int(round(settings['visit_weight']))
                         facility_pts = int(round(duration * settings['facility_weight']))
@@ -557,7 +555,6 @@ def member_receipt_scan():
     receipt = ReceiptManager.get_receipt_by_code(receipt_code)
     result = ReceiptManager.redeem_for_member(receipt_code, member['id'])
     if result['ok']:
-        EngagementEngine.recalculate_all()
         settings = RewardSettings.get_settings()
         pts = int(round((receipt['amount'] if receipt else 0) * settings['spending_weight']))
         flash(f'{result["message"]} +{pts} pts earned!', 'success')
@@ -588,7 +585,6 @@ def guest_receipt_scan():
     receipt = ReceiptManager.get_receipt_by_code(receipt_code)
     result = ReceiptManager.redeem_for_guest(receipt_code, guest['id'])
     if result['ok']:
-        EngagementEngine.recalculate_all()
         settings = RewardSettings.get_settings()
         pts = int(round((receipt['amount'] if receipt else 0) * settings['spending_weight']))
         flash(f'{result["message"]} +{pts} pts earned!', 'success')
@@ -610,7 +606,6 @@ def admin_checkin():
 def admin_checkout(checkin_id):
     duration = FacilityTracker.check_out(checkin_id)
     if duration:
-        EngagementEngine.recalculate_all()
         settings = RewardSettings.get_settings()
         visit_pts = int(round(settings['visit_weight']))
         facility_pts = int(round(duration * settings['facility_weight']))
@@ -635,7 +630,6 @@ def member_guest_create():
         return redirect(url_for('member_dashboard'))
 
     result = GuestManager.create_guest_id(member['id'], guest_name)
-    EngagementEngine.recalculate_all()
     settings = RewardSettings.get_settings()
     pts = int(round(settings['referral_weight']))
     flash(f'Guest ID Created! Pass Code: {result["guest_code"]} — +{pts} pts earned!', 'success')
@@ -663,7 +657,6 @@ def guest_spending():
     conn.close()
 
     GuestManager.record_spending(guest['id'], service_name, amount)
-    EngagementEngine.recalculate_all()
     settings = RewardSettings.get_settings()
     pts = int(round(amount * settings['spending_weight']))
     flash(f'Purchase of ${amount:.2f} recorded — +{pts} pts credited to your host member!', 'success')
@@ -681,11 +674,15 @@ def member_rewards():
         # Redeem reward action
         cursor.execute("UPDATE rewards SET status = 'redeemed' WHERE member_id = ? AND status = 'active'", (member['id'],))
         conn.commit()
-        # Generate new reward voucher (write path refreshes the whole club)
-        rewards = EngagementEngine.recalculate_all().get(member['id'])
+        # The redeem just flipped the member's only active voucher to
+        # 'redeemed'. Force a materialization pass so a fresh active voucher
+        # with a new code is persisted immediately — otherwise the member would
+        # permanently lose their active reward row and could never claim
+        # coupons again (claim/credit read the earned score from live data).
+        rewards = EngagementEngine.recalculate_all(force=True).get(member['id'])
         flash('Voucher code generated & verified!', 'success')
     else:
-        # Read-only rewards view — GET never writes to the database
+        # Rewards view — lazily materializes only when a scoring write happened
         rewards = EngagementEngine.view_member_rewards(member['id'])
 
     conn.close()
@@ -731,9 +728,8 @@ def admin_analytics_api():
     ''')
     facility_trends = [dict(row) for row in cursor.fetchall()]
 
-    # Total rewards distributed breakdown — computed from the live read-only
-    # rewards view so the chart is never stale or empty on a fresh database
-    # (reward rows are only materialized on data-changing writes).
+    # Total rewards distributed breakdown — computed from the live rewards
+    # view (lazily materialized when a scoring write happened).
     band_counts = {}
     for r in EngagementEngine.view_all_rewards().values():
         d = r['discount_percentage']
@@ -782,7 +778,6 @@ def admin_members():
                     VALUES (?, ?, ?, ?, ?, ?)
                 ''', (u_id, full_name, membership_type, email, phone, m_code))
                 conn.commit()
-                EngagementEngine.recalculate_all()
                 flash(f'Member {full_name} added successfully!', 'success')
 
     cursor.execute('''
@@ -830,10 +825,20 @@ def admin_member_edit(member_id):
             SET full_name = ?, email = ?, phone = ?
             WHERE id = ?
         ''', (full_name, email, phone, member_id))
+
+    # Optional yearly-fee management: set the annual fee and/or mark it paid.
+    if 'yearly_fee' in request.form and request.form['yearly_fee'] != '':
+        try:
+            yearly_fee = float(request.form['yearly_fee'])
+            if yearly_fee >= 0:
+                cursor.execute("UPDATE members SET yearly_fee = ? WHERE id = ?", (yearly_fee, member_id))
+        except ValueError:
+            pass
+    if 'fee_paid' in request.form:
+        cursor.execute("UPDATE members SET fee_paid = 1 WHERE id = ?", (member_id,))
+
     conn.commit()
     conn.close()
-
-    EngagementEngine.recalculate_all()
     flash('Member record updated!', 'success')
     return redirect(url_for('admin_members'))
 
@@ -860,7 +865,6 @@ def admin_activity():
                 VALUES (?, ?, ?, ?)
             ''', (member_id, activity_type, service_name, transaction_value))
             conn.commit()
-            EngagementEngine.recalculate_all()
             flash('Admin entry logged successfully!', 'success')
 
     cursor.execute('''
@@ -895,6 +899,132 @@ def admin_activity():
     conn.close()
     return render_template('admin/activity.html', activities=activities, all_members=all_members, checkins=checkins, facilities=FACILITIES, receipts=receipts)
 
+@app.route('/member/marketplace', methods=['GET'])
+@login_required
+def member_marketplace():
+    """Points Marketplace: browse the coupon catalog, view claimed coupons
+    with QR codes, and credit points against the yearly membership fee."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+    conn.close()
+
+    if not member:
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
+    rewards = EngagementEngine.view_member_rewards(member['id'])
+    coupons = MarketplaceManager.get_active_coupons()
+    my_coupons = MarketplaceManager.get_member_coupons(member['id'])
+    transactions = MarketplaceManager.get_point_transactions(member['id'])
+    fee = MarketplaceManager.get_member_fee(member['id'])
+
+    return render_template('member/marketplace.html', member=member, rewards=rewards,
+                           coupons=coupons, my_coupons=my_coupons,
+                           transactions=transactions, fee=fee)
+
+@app.route('/member/marketplace/claim', methods=['POST'])
+@login_required
+def member_marketplace_claim():
+    """Claim a coupon from the marketplace — deducts points and issues a code."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+    conn.close()
+
+    if not member:
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
+    try:
+        coupon_id = int(request.form.get('coupon_id', 0))
+    except (TypeError, ValueError):
+        coupon_id = 0
+
+    result = MarketplaceManager.claim_coupon(member['id'], coupon_id)
+    if result['ok']:
+        flash(result['message'], 'success')
+    else:
+        flash(result['message'], 'danger')
+    return redirect(url_for('member_marketplace'))
+
+@app.route('/member/marketplace/fee', methods=['POST'])
+@login_required
+def member_marketplace_fee():
+    """Credit points against the member's yearly club membership fee."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+    conn.close()
+
+    if not member:
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
+    try:
+        points = float(request.form.get('points', 0))
+    except (TypeError, ValueError):
+        points = 0.0
+
+    result = MarketplaceManager.apply_points_to_fee(member['id'], points)
+    if result['ok']:
+        flash(result['message'], 'success')
+    else:
+        flash(result['message'], 'danger')
+    return redirect(url_for('member_marketplace'))
+
+@app.route('/admin/marketplace', methods=['GET', 'POST'])
+@admin_required
+def admin_marketplace():
+    """Admin coupon marketplace manager: add new coupons or toggle availability."""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'add')
+        if action == 'add':
+            name = request.form.get('name', '').strip()
+            description = request.form.get('description', '').strip()
+            category = request.form.get('category', 'Facility').strip()
+            try:
+                cost_points = float(request.form.get('cost_points', 0.0))
+                value_amount = float(request.form.get('value_amount', 0.0))
+            except ValueError:
+                cost_points = value_amount = -1.0
+            facility_name = request.form.get('facility_name', '').strip() or None
+
+            if not name or not description:
+                flash('Coupon name and description are required.', 'danger')
+            elif cost_points < 0 or value_amount < 0:
+                flash('Coupon cost and value cannot be negative.', 'danger')
+            else:
+                cursor.execute('''
+                    INSERT INTO coupons (name, description, category, cost_points, value_amount, facility_name, active)
+                    VALUES (?, ?, ?, ?, ?, ?, 1)
+                ''', (name, description, category, cost_points, value_amount, facility_name))
+                conn.commit()
+                flash(f'Coupon "{name}" added to the marketplace!', 'success')
+        elif action == 'toggle':
+            try:
+                coupon_id = int(request.form.get('coupon_id', 0))
+            except (TypeError, ValueError):
+                coupon_id = 0
+            cursor.execute("SELECT * FROM coupons WHERE id = ?", (coupon_id,))
+            coupon = cursor.fetchone()
+            if coupon:
+                cursor.execute("UPDATE coupons SET active = ? WHERE id = ?", (0 if coupon['active'] else 1, coupon_id))
+                conn.commit()
+                state = 'deactivated' if coupon['active'] else 'activated'
+                flash(f'Coupon "{coupon["name"]}" {state}.', 'success')
+
+    cursor.execute("SELECT * FROM coupons ORDER BY active DESC, cost_points ASC")
+    coupons = cursor.fetchall()
+    conn.close()
+    return render_template('admin/marketplace.html', coupons=coupons)
+
 @app.route('/admin/settings', methods=['GET', 'POST'])
 @admin_required
 def admin_settings():
@@ -908,18 +1038,19 @@ def admin_settings():
             profit_pool = float(request.form.get('profit_sharing_pool', 10000.0))
             premium_mult = float(request.form.get('premium_multiplier', 1.15))
             vip_mult = float(request.form.get('vip_multiplier', 1.30))
+            points_value = float(request.form.get('points_value_dollars', 0.50))
         except ValueError:
             flash('Invalid numeric inputs for algorithm settings.', 'danger')
             return redirect(url_for('admin_settings'))
 
-        if visit_w < 0 or spend_w < 0 or referral_w < 0 or facility_w < 0 or loyalty_w < 0 or profit_pool < 0 or premium_mult < 0 or vip_mult < 0:
-            flash('Algorithm parameters and profit pool cannot be negative.', 'danger')
+        if visit_w < 0 or spend_w < 0 or referral_w < 0 or facility_w < 0 or loyalty_w < 0 or profit_pool < 0 or premium_mult < 0 or vip_mult < 0 or points_value < 0:
+            flash('Algorithm parameters, reward pool, and points value cannot be negative.', 'danger')
             return redirect(url_for('admin_settings'))
 
         RewardSettings.update_settings(visit_w, spend_w, referral_w, facility_w,
-                                       loyalty_w, profit_pool, premium_mult, vip_mult)
-        EngagementEngine.recalculate_all()
-        flash('Algorithm parameters & profit-sharing pool updated successfully!', 'success')
+                                       loyalty_w, profit_pool, premium_mult, vip_mult,
+                                       points_value)
+        flash('Algorithm parameters & marketplace reward pool updated successfully!', 'success')
         return redirect(url_for('admin_settings'))
 
     settings = RewardSettings.get_settings()

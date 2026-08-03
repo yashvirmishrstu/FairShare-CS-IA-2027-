@@ -1153,3 +1153,103 @@ footer {
   animation: fadeIn 0.3s ease-out reverse both;
 }
 
+/* ------------------------------------------------------------
+   Confetti burst — Bauhaus shapes (red circle, blue square,
+   yellow triangle) burst outward from the toast on appearance.
+   ------------------------------------------------------------ */
+.points-confetti {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  z-index: 10000;
+  pointer-events: none;
+}
+.points-confetti-particle {
+  position: absolute;
+  border: 2px solid var(--ink);
+  animation: confettiBurst 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.confetti-circle {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  margin-left: -9px;
+  margin-top: -9px;
+}
+.confetti-square {
+  width: 16px;
+  height: 16px;
+  background: var(--secondary);
+  margin-left: -8px;
+  margin-top: -8px;
+}
+.confetti-triangle {
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 16px solid var(--tertiary);
+  margin-left: -9px;
+  margin-top: -8px;
+}
+.confetti-triangle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: -7px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 12px solid var(--ink);
+}
+@keyframes confettiBurst {
+  0%   { transform: translate(0, 0) scale(0) rotate(0deg); opacity: 1; }
+  20%  { opacity: 1; }
+  100% { transform: translate(var(--cx), var(--cy)) scale(0.6) rotate(var(--cr)); opacity: 0; }
+}
+
+/* ------------------------------------------------------------
+   Session Points Counter — live running total on the scanner
+   page that accumulates point values from flash messages
+   across check-ins/check-outs during a scanning session.
+   ------------------------------------------------------------ */
+#session-points-badge {
+  transition: transform 0.2s ease;
+}
+#session-points-badge.pulse {
+  animation: sessionPtsPop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+@keyframes sessionPtsPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+
+/* ------------------------------------------------------------
+   Points Marketplace — coupon catalog cards
+   Bauhaus-consistent: bold borders, hard shadows, hover lift.
+   ------------------------------------------------------------ */
+.coupon-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.coupon-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 6px 6px 0 0 var(--shadow-color);
+  border-color: var(--ink);
+}
+
+.coupon-card.coupon-locked {
+  opacity: 0.72;
+}
+
+.coupon-card.coupon-locked:hover {
+  transform: none;
+  box-shadow: 4px 4px 0 0 var(--shadow-color);
+  border-color: var(--border-glass);
+}

@@ -17,18 +17,21 @@ class RewardSettings:
 
     @staticmethod
     def update_settings(visit_weight, spending_weight, referral_weight, facility_weight,
-                        loyalty_weight, profit_sharing_pool, premium_multiplier=1.15, vip_multiplier=1.30):
-        """Update algorithm weights and profit pool settings."""
+                        loyalty_weight, profit_sharing_pool, premium_multiplier=1.15, vip_multiplier=1.30,
+                        points_value_dollars=0.50):
+        """Update algorithm weights and reward pool settings."""
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO reward_settings (
                 visit_weight, spending_weight, referral_weight, facility_weight,
-                loyalty_weight, premium_multiplier, vip_multiplier, profit_sharing_pool
+                loyalty_weight, premium_multiplier, vip_multiplier, profit_sharing_pool,
+                points_value_dollars
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (visit_weight, spending_weight, referral_weight, facility_weight,
-              loyalty_weight, premium_multiplier, vip_multiplier, profit_sharing_pool))
+              loyalty_weight, premium_multiplier, vip_multiplier, profit_sharing_pool,
+              points_value_dollars))
         conn.commit()
         conn.close()
 
@@ -102,12 +105,16 @@ class EngagementEngine:
         cursor.execute("SELECT member_id, COALESCE(SUM(duration_minutes),0) AS s FROM facility_checkins WHERE status='completed' GROUP BY member_id")
         facility = {r['member_id']: r['s'] for r in cursor.fetchall()}
 
+        cursor.execute("SELECT member_id, COALESCE(SUM(-points_delta), 0.0) AS s FROM point_transactions GROUP BY member_id")
+        points_spent = {r['member_id']: r['s'] for r in cursor.fetchall()}
+
         return {
             'visits': visits,
             'direct_spend': direct_spend,
             'referrals': referrals,
             'guest_spend': guest_spend,
             'facility': facility,
+            'points_spent': points_spent,
         }
 
     @staticmethod
@@ -119,6 +126,7 @@ class EngagementEngine:
         direct_referrals = aggregates['referrals'].get(member_id, 0)
         guest_spending = aggregates['guest_spend'].get(member_id, 0.0)
         facility_minutes = aggregates['facility'].get(member_id, 0)
+        points_spent = aggregates['points_spent'].get(member_id, 0.0)
 
         membership_type = EngagementEngine.normalize_tier(member['membership_type'])
         loyalty_months = EngagementEngine._loyalty_months(member['join_date'])
@@ -152,6 +160,7 @@ class EngagementEngine:
             'tier_multiplier': tier_multiplier,
             'base_score': round(base_score, 2),
             'engagement_score': round(score, 2),
+            'points_spent': points_spent,
         }
 
     @classmethod
@@ -185,7 +194,7 @@ class EngagementEngine:
             return summaries[member_id]
         # Unknown member — return a zeroed summary matching the old contract
         settings = RewardSettings.get_settings()
-        empty = {'visits': {}, 'direct_spend': {}, 'referrals': {}, 'guest_spend': {}, 'facility': {}}
+        empty = {'visits': {}, 'direct_spend': {}, 'referrals': {}, 'guest_spend': {}, 'facility': {}, 'points_spent': {}}
         return EngagementEngine._build_summary(
             {'id': member_id, 'membership_type': 'Member', 'join_date': None}, empty, settings)
 
@@ -205,33 +214,53 @@ class EngagementEngine:
         return 0.0
 
     # ------------------------------------------------------------------
-    # Rewards records — write path (recalculate_all) vs read-only views
+    # Rewards records — lazy write path vs views
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_rewards_map(summaries, existing_codes, profit_pool):
+    def _build_rewards_map(summaries, existing_codes):
         """Turn computed summaries into rewards dicts. existing_codes maps
-        member_id -> stored redemption_code (may be empty on read paths)."""
-        total_club_score = sum(s['engagement_score'] for s in summaries.values())
+        member_id -> stored redemption_code (may be empty on read paths).
+
+        points_balance = lifetime points earned (engagement score) minus
+        points already spent on marketplace coupons or yearly fee credits."""
         rewards_map = {}
         for member_id, summary in summaries.items():
             score = summary['engagement_score']
             discount = EngagementEngine.calculate_discount_band(score)
-            earned_share = round((score / total_club_score) * profit_pool, 2) if total_club_score > 0 else 0.0
+            spent = summary.get('points_spent', 0.0)
             rewards_map[member_id] = {
                 'engagement_score': score,
                 'discount_percentage': discount,
-                'earned_profit_share': earned_share,
+                'points_balance': round(max(0.0, score - spent), 2),
+                'points_spent': round(spent, 2),
                 'redemption_code': existing_codes.get(member_id) or f"FS-RED-{uuid.uuid4().hex[:8].upper()}",
                 'details': summary,
             }
         return rewards_map
 
     @classmethod
-    def recalculate_all(cls):
+    def _is_dirty(cls):
+        """True when a scoring-relevant write happened since the last rewards
+        recompute. The flag is maintained by SQLite triggers on the scoring
+        tables (see database.init_db) and cleared by recalculate_all()."""
+        conn = get_db()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT pending FROM rewards_recompute WHERE id = 1")
+            row = cursor.fetchone()
+            return bool(row and row['pending'])
+        finally:
+            conn.close()
+
+    @classmethod
+    def recalculate_all(cls, force=False):
         """WRITE path: recompute every member's score and upsert their active
-        reward row in ONE transaction. Call only after data-changing writes
-        (scans, purchases, referrals, settings changes, member creation).
+        reward row in ONE transaction, then clear the recompute-pending flag.
+        Call after any data-changing write (scans, purchases, referrals,
+        settings changes, member creation). The `force` argument exists for
+        callers that want to be explicit (e.g. the redeem flow); the write
+        always runs because this is the materialization operation itself.
         Returns {member_id: rewards_dict}."""
         conn = get_db()
         try:
@@ -239,7 +268,7 @@ class EngagementEngine:
             cursor = conn.cursor()
             cursor.execute("SELECT member_id, redemption_code FROM rewards WHERE status='active'")
             existing_codes = {r['member_id']: r['redemption_code'] for r in cursor.fetchall()}
-            rewards_map = cls._build_rewards_map(summaries, existing_codes, settings['profit_sharing_pool'])
+            rewards_map = cls._build_rewards_map(summaries, existing_codes)
 
             for member_id, r in rewards_map.items():
                 cursor.execute("SELECT id FROM rewards WHERE member_id=? AND status='active'", (member_id,))
@@ -247,14 +276,17 @@ class EngagementEngine:
                 if row:
                     cursor.execute('''
                         UPDATE rewards
-                        SET engagement_score = ?, discount_percentage = ?, earned_profit_share = ?
+                        SET engagement_score = ?, discount_percentage = ?
                         WHERE id = ?
-                    ''', (r['engagement_score'], r['discount_percentage'], r['earned_profit_share'], row['id']))
+                    ''', (r['engagement_score'], r['discount_percentage'], row['id']))
                 else:
                     cursor.execute('''
-                        INSERT INTO rewards (member_id, engagement_score, discount_percentage, earned_profit_share, redemption_code, status)
-                        VALUES (?, ?, ?, ?, ?, 'active')
-                    ''', (member_id, r['engagement_score'], r['discount_percentage'], r['earned_profit_share'], r['redemption_code']))
+                        INSERT INTO rewards (member_id, engagement_score, discount_percentage, redemption_code, status)
+                        VALUES (?, ?, ?, ?, 'active')
+                    ''', (member_id, r['engagement_score'], r['discount_percentage'], r['redemption_code']))
+            # The upserts above re-mark the cache dirty via the rewards-table
+            # triggers; clear the flag so the next rewards view is a pure read.
+            cursor.execute("UPDATE rewards_recompute SET pending = 0 WHERE id = 1")
             conn.commit()
             return rewards_map
         finally:
@@ -262,21 +294,25 @@ class EngagementEngine:
 
     @classmethod
     def view_all_rewards(cls):
-        """READ-ONLY: current rewards view for every member. Never writes to the
-        database — safe for GET routes and CSV exports."""
+        """Rewards view for every member. Lazily materializes (writes) reward
+        rows ONLY when a scoring write happened since the last recompute (the
+        SQLite-triggered dirty flag is set); otherwise a pure read — safe for
+        GET routes and CSV exports when the cache is clean."""
+        if cls._is_dirty():
+            cls.recalculate_all()
         conn = get_db()
         try:
             settings, summaries = cls._load(conn)
             cursor = conn.cursor()
             cursor.execute("SELECT member_id, redemption_code FROM rewards WHERE status='active'")
             existing_codes = {r['member_id']: r['redemption_code'] for r in cursor.fetchall()}
-            return cls._build_rewards_map(summaries, existing_codes, settings['profit_sharing_pool'])
+            return cls._build_rewards_map(summaries, existing_codes)
         finally:
             conn.close()
 
     @classmethod
     def view_member_rewards(cls, member_id):
-        """READ-ONLY: current rewards view for a single member — no DB writes."""
+        """Rewards view for a single member (lazy materialization when dirty)."""
         return cls.view_all_rewards().get(member_id)
 
 
@@ -518,6 +554,179 @@ class ReceiptManager:
         return {'ok': True, 'message': f'Purchase of ${receipt["amount"]:.2f} from receipt {receipt_code} — credited to your host member!'}
 
 
+class MarketplaceManager:
+    """Points marketplace: members spend earned points to claim coupons for
+    facilities and discounts, or credit points against their yearly club
+    membership fee. All spending is recorded in the point_transactions
+    ledger so a member's spendable balance always equals lifetime earned
+    points minus points spent."""
+
+    @staticmethod
+    def get_active_coupons():
+        """Catalog of currently available coupons (admin-enabled)."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM coupons WHERE active = 1 ORDER BY cost_points ASC")
+        coupons = cursor.fetchall()
+        conn.close()
+        return coupons
+
+    @staticmethod
+    def get_coupon(coupon_id):
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM coupons WHERE id = ?", (coupon_id,))
+        coupon = cursor.fetchone()
+        conn.close()
+        return coupon
+
+    @staticmethod
+    def get_member_coupons(member_id):
+        """Coupons a member has claimed, newest first."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT mc.*, c.name, c.description, c.category, c.value_amount, c.facility_name
+            FROM member_coupons mc
+            JOIN coupons c ON mc.coupon_id = c.id
+            WHERE mc.member_id = ?
+            ORDER BY mc.claimed_at DESC
+        ''', (member_id,))
+        coupons = cursor.fetchall()
+        conn.close()
+        return coupons
+
+    @staticmethod
+    def get_point_transactions(member_id, limit=12):
+        """Recent point ledger entries (spends) for a member."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM point_transactions WHERE member_id = ?
+            ORDER BY created_at DESC LIMIT ?
+        ''', (member_id, limit))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+
+    @staticmethod
+    def claim_coupon(member_id, coupon_id):
+        """Claim a coupon for the member: deducts points and issues a unique
+        coupon code. Returns {'ok': bool, 'message': str, 'coupon_code': str|None}.
+        The spend is written atomically with the coupon row."""
+        conn = get_db()
+        try:
+            cursor = conn.cursor()
+            coupon = MarketplaceManager.get_coupon(coupon_id)
+            if not coupon or not coupon['active']:
+                return {'ok': False, 'message': 'This coupon is no longer available in the marketplace.'}
+
+            # Earned points come from a fresh live engagement computation, never
+            # from the materialized rewards table (which may be stale or absent
+            # — e.g. right after a redeem flipped the active row to 'redeemed').
+            earned = EngagementEngine.calculate_engagement_score(member_id)['engagement_score']
+            cursor.execute("SELECT COALESCE(SUM(-points_delta), 0.0) AS s FROM point_transactions WHERE member_id = ?", (member_id,))
+            spent = cursor.fetchone()['s']
+            balance = earned - spent
+
+            if balance < coupon['cost_points']:
+                return {'ok': False, 'message': f'Insufficient points - you need {coupon["cost_points"]:.0f} pts but only have {balance:.0f} pts available.'}
+
+            coupon_code = f"CPN-{uuid.uuid4().hex[:6].upper()}"
+            cursor.execute('''
+                INSERT INTO member_coupons (member_id, coupon_id, coupon_code, points_spent, status)
+                VALUES (?, ?, ?, ?, 'active')
+            ''', (member_id, coupon_id, coupon_code, coupon['cost_points']))
+            cursor.execute('''
+                INSERT INTO point_transactions (member_id, points_delta, reason)
+                VALUES (?, ?, ?)
+            ''', (member_id, -coupon['cost_points'], f"Claimed coupon: {coupon['name']}"))
+            conn.commit()
+            return {'ok': True, 'message': f"Coupon claimed! {coupon['name']} for {coupon['cost_points']:.0f} pts.", 'coupon_code': coupon_code}
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_member_fee(member_id):
+        """Yearly membership fee status for a member."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT yearly_fee, fee_points_applied, fee_paid FROM members WHERE id = ?", (member_id,))
+        row = cursor.fetchone()
+        settings = RewardSettings.get_settings()
+        conn.close()
+        if not row:
+            return None
+        applied_dollars = row['fee_points_applied']
+        remaining = round(max(0.0, row['yearly_fee'] - applied_dollars), 2)
+        return {
+            'yearly_fee': row['yearly_fee'],
+            'fee_points_applied': row['fee_points_applied'],
+            'fee_paid': bool(row['fee_paid']),
+            'remaining': remaining,
+            'points_value_dollars': settings['points_value_dollars'],
+        }
+
+    @staticmethod
+    def apply_points_to_fee(member_id, points):
+        """Convert points into a dollar credit against the yearly fee.
+        Points are consumed at the configured rate and can never exceed the
+        remaining fee balance. Returns {'ok', 'message', 'credited', 'remaining'}."""
+        conn = get_db()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT yearly_fee, fee_points_applied, fee_paid FROM members WHERE id = ?", (member_id,))
+            row = cursor.fetchone()
+            if not row:
+                return {'ok': False, 'message': 'Member record not found.'}
+            if row['fee_paid']:
+                return {'ok': False, 'message': 'Your yearly fee is already paid in full.'}
+
+            settings = RewardSettings.get_settings()
+            rate = settings['points_value_dollars']
+            # A zero/negative conversion rate would burn points for no dollar
+            # credit — refuse instead of silently consuming the balance.
+            if rate <= 0:
+                return {'ok': False, 'message': 'Point-to-fee conversion is currently unavailable (conversion rate is zero).'}
+            # Same fresh-computation rationale as claim_coupon: never trust the
+            # materialized rewards table for the spendable balance.
+            earned = EngagementEngine.calculate_engagement_score(member_id)['engagement_score']
+            cursor.execute("SELECT COALESCE(SUM(-points_delta), 0.0) AS s FROM point_transactions WHERE member_id = ?", (member_id,))
+            spent = cursor.fetchone()['s']
+            balance = earned - spent
+
+            points = float(points)
+            if points <= 0:
+                return {'ok': False, 'message': 'Please enter a positive number of points.'}
+            if points > balance:
+                return {'ok': False, 'message': f'You only have {balance:.0f} points available to credit.'}
+
+            credited = round(points * rate, 2)
+            remaining = round(max(0.0, row['yearly_fee'] - row['fee_points_applied'] - credited), 2)
+            # Never allow over-crediting beyond the remaining fee
+            if remaining < 0:
+                credited = round(max(0.0, row['yearly_fee'] - row['fee_points_applied']), 2)
+                points = round(credited / rate, 2) if rate > 0 else 0.0
+                remaining = 0.0
+
+            cursor.execute('''
+                INSERT INTO point_transactions (member_id, points_delta, reason)
+                VALUES (?, ?, ?)
+            ''', (member_id, -points, 'Yearly membership fee credit'))
+            cursor.execute("UPDATE members SET fee_points_applied = fee_points_applied + ? WHERE id = ?", (credited, member_id))
+            if remaining == 0:
+                cursor.execute("UPDATE members SET fee_paid = 1 WHERE id = ?", (member_id,))
+            conn.commit()
+            return {
+                'ok': True,
+                'message': f'{points:.0f} pts converted to ${credited:.2f} off your yearly fee.',
+                'credited': credited,
+                'remaining': remaining,
+            }
+        finally:
+            conn.close()
+
+
 class CSVReportGenerator:
     @staticmethod
     def export_member_usage_logs():
@@ -545,7 +754,7 @@ class CSVReportGenerator:
 
     @staticmethod
     def export_financial_reward_summaries():
-        """READ-ONLY export of financial rewards & profit sharing summaries.
+        """READ-ONLY export of points & marketplace summaries.
         Uses the batch rewards view so GET requests never mutate the database."""
         rewards_map = EngagementEngine.view_all_rewards()
 
@@ -557,19 +766,21 @@ class CSVReportGenerator:
 
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(['Member Code', 'Full Name', 'Membership Type', 'Total Points Earned', 'Discount Band (%)', 'Earned Profit Share ($)', 'Redemption Code', 'Status'])
+        writer.writerow(['Member Code', 'Full Name', 'Membership Type', 'Total Points Earned', 'Points Balance', 'Discount Band (%)', 'Coupons Claimed', 'Redemption Code', 'Status'])
 
         for m in members:
             info = rewards_map.get(m['id'])
             if info is None:
                 continue
+            coupon_count = len(MarketplaceManager.get_member_coupons(m['id']))
             writer.writerow([
                 m['member_code'],
                 m['full_name'],
                 m['membership_type'],
                 f"{info['engagement_score']:.2f}",
+                f"{info['points_balance']:.2f}",
                 f"{info['discount_percentage']:.1f}%",
-                f"${info['earned_profit_share']:.2f}",
+                coupon_count,
                 info['redemption_code'],
                 'Active'
             ])

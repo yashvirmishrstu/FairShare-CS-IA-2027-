@@ -36,6 +36,7 @@ def init_db():
             email TEXT NOT NULL,
             phone TEXT,
             member_code TEXT UNIQUE NOT NULL,
+            yearly_fee REAL NOT NULL DEFAULT 500.00,
             join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         );
@@ -121,6 +122,40 @@ def init_db():
             FOREIGN KEY (scanned_by_member) REFERENCES members (id) ON DELETE SET NULL,
             FOREIGN KEY (scanned_by_guest) REFERENCES guest_ids (id) ON DELETE SET NULL
         );
+
+        CREATE TABLE IF NOT EXISTS coupons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'Facility',
+            cost_points REAL NOT NULL DEFAULT 0.0,
+            value_amount REAL NOT NULL DEFAULT 0.0,
+            facility_name TEXT,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS member_coupons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL,
+            coupon_id INTEGER NOT NULL,
+            coupon_code TEXT UNIQUE NOT NULL,
+            points_spent REAL NOT NULL DEFAULT 0.0,
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'used')),
+            claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            used_at TIMESTAMP,
+            FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE,
+            FOREIGN KEY (coupon_id) REFERENCES coupons (id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS point_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL,
+            points_delta REAL NOT NULL,
+            reason TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
+        );
     ''')
 
     # Migration: add guest facility tracking column to facility_checkins (existing databases)
@@ -140,6 +175,18 @@ def init_db():
         cursor.execute("ALTER TABLE reward_settings ADD COLUMN premium_multiplier REAL NOT NULL DEFAULT 1.15")
     if 'vip_multiplier' not in settings_cols:
         cursor.execute("ALTER TABLE reward_settings ADD COLUMN vip_multiplier REAL NOT NULL DEFAULT 1.30")
+    if 'points_value_dollars' not in settings_cols:
+        cursor.execute("ALTER TABLE reward_settings ADD COLUMN points_value_dollars REAL NOT NULL DEFAULT 0.50")
+
+    # Migration: add yearly membership fee columns to members (existing databases)
+    cursor.execute("PRAGMA table_info(members)")
+    member_cols = [row[1] for row in cursor.fetchall()]
+    if 'yearly_fee' not in member_cols:
+        cursor.execute("ALTER TABLE members ADD COLUMN yearly_fee REAL NOT NULL DEFAULT 1200.00")
+    if 'fee_points_applied' not in member_cols:
+        cursor.execute("ALTER TABLE members ADD COLUMN fee_points_applied REAL NOT NULL DEFAULT 0.0")
+    if 'fee_paid' not in member_cols:
+        cursor.execute("ALTER TABLE members ADD COLUMN fee_paid INTEGER NOT NULL DEFAULT 0")
 
     # Seed Default Reward Settings if empty
     cursor.execute("SELECT COUNT(*) FROM reward_settings")
@@ -147,16 +194,18 @@ def init_db():
         cursor.execute('''
             INSERT INTO reward_settings (
                 visit_weight, spending_weight, referral_weight, facility_weight,
-                loyalty_weight, premium_multiplier, vip_multiplier, profit_sharing_pool
+                loyalty_weight, premium_multiplier, vip_multiplier, profit_sharing_pool,
+                points_value_dollars
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             Config.DEFAULT_VISIT_WEIGHT, Config.DEFAULT_SPENDING_WEIGHT,
             Config.DEFAULT_REFERRAL_WEIGHT, Config.DEFAULT_FACILITY_WEIGHT,
             Config.DEFAULT_LOYALTY_WEIGHT,
             Config.DEFAULT_TIER_MULTIPLIERS['Premium'],
             Config.DEFAULT_TIER_MULTIPLIERS['VIP'],
-            Config.DEFAULT_PROFIT_POOL
+            Config.DEFAULT_PROFIT_POOL,
+            Config.DEFAULT_POINTS_VALUE_DOLLARS
         ))
 
     # Seed Demo Admin User if empty
@@ -209,6 +258,56 @@ def init_db():
         for svc, amt in demo_receipts:
             rcode = f"RCPT-{uuid.uuid4().hex[:6].upper()}"
             cursor.execute("INSERT INTO receipts (receipt_code, service_name, amount) VALUES (?, ?, ?)", (rcode, svc, amt))
+
+    # Seed Coupon Marketplace catalog if empty
+    cursor.execute("SELECT COUNT(*) FROM coupons")
+    if cursor.fetchone()[0] == 0:
+        demo_coupons = [
+            ("Gym Day Pass", "Full-day access to the Club Fitness & Gym. Scan your coupon QR at the gym desk to check in.", "Facility", 40.0, 10.00, "Club Fitness & Gym"),
+            ("Tennis Court Hour", "One hour of reserved play on the Tennis & Squash Courts for you and a guest.", "Facility", 60.0, 18.00, "Tennis & Squash Courts"),
+            ("Pool & Spa Session", "A relaxing afternoon session at the Swimming Pool & Spa, including towel service.", "Facility", 80.0, 25.00, "Swimming Pool & Spa"),
+            ("Pro Golf Round", "One 18-hole round on the Pro Golf Course with cart included.", "Facility", 150.0, 45.00, "Pro Golf Course"),
+            ("$15 Bistro Voucher", "Spend $15 toward anything on the Bistro & Lounge menu.", "Dining", 50.0, 15.00, None),
+            ("10% Pro Shop Discount", "Save 10% on a single purchase at the Pro Shop, up to $25 in savings.", "Pro Shop", 90.0, 25.00, None),
+            ("Free Guest Pass", "Generate a free guest day-pass for a visitor - all their activity still credits your points.", "Membership", 70.0, 0.00, None),
+            ("Priority Booking Access", "Skip the queue for weekend facility bookings for one month.", "Events", 120.0, 0.00, None),
+        ]
+        for name, desc, cat, cost, val, facility in demo_coupons:
+            cursor.execute(
+                "INSERT INTO coupons (name, description, category, cost_points, value_amount, facility_name) VALUES (?, ?, ?, ?, ?, ?)",
+                (name, desc, cat, cost, val, facility)
+            )
+
+    # ------------------------------------------------------------------
+    # Rewards recompute flag + dirty-marking triggers
+    # ------------------------------------------------------------------
+    # Singleton row (id=1) that records whether any scoring-relevant data
+    # changed since the last batch rewards recompute. SQLite triggers set it
+    # on every write to the scoring tables; EngagementEngine's lazy batch
+    # recompute clears it after materializing fresh reward rows. This means
+    # no route ever needs to remember to call recalculate_all() — a write is
+    # automatically detected and the recompute runs on the next rewards read.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS rewards_recompute (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            pending INTEGER NOT NULL DEFAULT 0
+        )
+    ''')
+    cursor.execute("INSERT OR IGNORE INTO rewards_recompute (id, pending) VALUES (1, 0)")
+
+    # Triggers are created AFTER seeding so a fresh install starts with a clean
+    # flag (read paths stay read-only until the first real data change). DROP +
+    # CREATE keeps this idempotent so existing databases pick up the triggers
+    # on next startup. `rewards` is included so the redeem flow (which flips an
+    # active row to 'redeemed') also invalidates the cache.
+    for table in ('activities', 'guest_activities', 'facility_checkins',
+                  'members', 'reward_settings', 'point_transactions', 'rewards'):
+        for verb in ('INSERT', 'UPDATE', 'DELETE'):
+            cursor.execute(f"DROP TRIGGER IF EXISTS trg_{table}_{verb.lower()}_dirty")
+            cursor.execute(
+                f"CREATE TRIGGER trg_{table}_{verb.lower()}_dirty AFTER {verb} ON {table} "
+                "BEGIN UPDATE rewards_recompute SET pending = 1 WHERE id = 1; END"
+            )
 
     conn.commit()
     conn.close()

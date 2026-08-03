@@ -3,6 +3,7 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  initSessionPointsCounter();
   initPointsCelebration();
   initGeoDrift();
   initMobileNav();
@@ -573,6 +574,50 @@ function initAdminAnalytics() {
     .catch(err => console.error("Error loading analytics:", err));
 }
 
+// Session Points Counter — accumulates points from flash messages across
+// check-ins and check-outs during a facility scanning session.  Persists
+// via sessionStorage so the total survives page reloads (each scan POST
+// redirects back to the same page).  Auto-resets when leaving the scanner.
+function initSessionPointsCounter() {
+  const badge = document.getElementById('session-points-badge');
+  const valueEl = document.getElementById('session-points-value');
+  if (!badge || !valueEl) return;
+
+  const KEY = 'fairshare-scanner-session-pts';
+
+  // Detect points from any flash alert on this page and accumulate
+  const alerts = document.querySelectorAll('.alert');
+  let freshPoints = 0;
+  alerts.forEach(alert => {
+    const text = alert.textContent || '';
+    const match = text.match(/\+?(\d+[\d,]*)\s*(?:pts|points|point)/i)
+               || text.match(/(\d+[\d,]*)\s*(?:points? earned|pts earned)/i);
+    if (!match) return;
+    freshPoints += parseInt(match[1].replace(/[^0-9]/g, ''), 10) || 0;
+  });
+
+  // Read stored total, add new points, write back
+  const stored = (() => { try { return parseInt(sessionStorage.getItem(KEY), 10) || 0; } catch(e) { return 0; } })();
+  const total = stored + freshPoints;
+  try { sessionStorage.setItem(KEY, total); } catch(e) {}
+
+  // Show the badge and animate if points were just added
+  if (total > 0) {
+    badge.style.display = '';
+    valueEl.textContent = total;
+    if (freshPoints > 0) {
+      badge.classList.remove('pulse');
+      void badge.offsetWidth; // force reflow
+      badge.classList.add('pulse');
+    }
+  }
+
+  // Reset the session counter when the user navigates away from the scanner
+  window.addEventListener('beforeunload', () => {
+    try { sessionStorage.removeItem(KEY); } catch(e) {}
+  });
+}
+
 // Points-logged celebration toast — triggered when a flash message
 // indicates points were earned (check-in, purchase, referral, receipt scan).
 // Matches the reference "Points Logged" design: bold red badge, scale-in,
@@ -601,6 +646,31 @@ function showPointsToast(points) {
   backdrop.className = 'points-toast-backdrop';
   document.body.appendChild(backdrop);
 
+  // Create confetti container with 8 Bauhaus particles
+  const confetti = document.createElement('div');
+  confetti.className = 'points-confetti';
+  const shapes = ['confetti-circle', 'confetti-square', 'confetti-triangle'];
+  const burstAngles = [
+    { cx: -70, cy: -90, cr: 320 },
+    { cx: 80, cy: -70, cr: -280 },
+    { cx: -90, cy: -20, cr: 420 },
+    { cx: 95, cy: 10, cr: -380 },
+    { cx: -60, cy: 60, cr: 260 },
+    { cx: 50, cy: 80, cr: -340 },
+    { cx: -20, cy: -100, cr: 500 },
+    { cx: 30, cy: 40, cr: -520 },
+  ];
+  for (let i = 0; i < 8; i++) {
+    const p = document.createElement('div');
+    p.className = `points-confetti-particle ${shapes[i % 3]}`;
+    p.style.setProperty('--cx', `${burstAngles[i].cx}px`);
+    p.style.setProperty('--cy', `${burstAngles[i].cy}px`);
+    p.style.setProperty('--cr', `${burstAngles[i].cr}deg`);
+    p.style.animationDelay = `${i * 0.04}s`;
+    confetti.appendChild(p);
+  }
+  document.body.appendChild(confetti);
+
   // Create toast
   const toast = document.createElement('div');
   toast.className = 'points-toast';
@@ -616,6 +686,7 @@ function showPointsToast(points) {
     const inner = toast.querySelector('.points-toast-inner');
     if (inner) inner.classList.add('fade-out');
     if (backdrop) backdrop.classList.add('fade-out');
+    if (confetti) confetti.remove();
     setTimeout(() => {
       if (toast.parentNode) toast.remove();
       if (backdrop.parentNode) backdrop.remove();

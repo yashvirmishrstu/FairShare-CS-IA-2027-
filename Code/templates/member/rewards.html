@@ -4,8 +4,8 @@
 
 {% block content %}
 <div style="margin-bottom: 2rem;">
-  <h1>Personalised Member Rewards & Profit Sharing</h1>
-  <p style="color: var(--text-muted);">Your dynamic discount rates and earned profit sharing are updated in real time based on your total points earned.</p>
+  <h1>Personalised Member Rewards</h1>
+  <p style="color: var(--text-muted);">Your dynamic discount rate updates in real time based on your total points earned. Spend your points balance in the <a href="{{ url_for('member_marketplace') }}" class="u-link">Points Marketplace</a> for coupons or a yearly-fee credit.</p>
 </div>
 
 <div class="grid grid-cols-2" style="gap: 2rem; margin-bottom: 2rem;">
@@ -48,8 +48,8 @@
 
     <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; margin-bottom: 1.5rem;">
       <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-        <span style="color: var(--text-muted);">Earned Profit Share:</span>
-        <strong style="color: var(--ink); font-size: 1.1rem;">${{ "%.2f"|format(rewards.earned_profit_share) }}</strong>
+        <span style="color: var(--text-muted);">Spendable Points Balance:</span>
+        <strong style="color: var(--ink); font-size: 1.1rem;">{{ "%.1f"|format(rewards.points_balance) }} pts</strong>
       </div>
       <div style="display: flex; justify-content: space-between;">
         <span style="color: var(--text-muted);">Redemption Voucher Code:</span>
@@ -57,6 +57,9 @@
       </div>
     </div>
 
+    <a href="{{ url_for('member_marketplace') }}" class="btn btn-primary" style="width: 100%; margin-bottom: 0.75rem;">
+      Open Points Marketplace &rarr;
+    </a>
     <form action="{{ url_for('member_rewards') }}" method="POST">
       <button type="submit" class="btn btn-emerald" style="width: 100%;">
         Generate / Verify New Redemption QR Code

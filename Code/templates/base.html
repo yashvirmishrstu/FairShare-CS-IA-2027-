@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}FairShare - Personalized Club Rewards & Profit Sharing{% endblock %}</title>
+  <title>{% block title %}FairShare - Personalized Club Rewards & Points Marketplace{% endblock %}</title>
 
   <!-- CSS Styles -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=13">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=15">
 
   <!-- Outfit typeface -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -40,11 +40,13 @@
           {% if current_user.role == 'admin' %}
             <li><a href="{{ url_for('admin_dashboard') }}" class="nav-link">Dashboard</a></li>
             <li><a href="{{ url_for('admin_members') }}" class="nav-link">Members</a></li>
+            <li><a href="{{ url_for('admin_marketplace') }}" class="nav-link">Marketplace</a></li>
             <li><a href="{{ url_for('admin_activity') }}" class="nav-link">Activity</a></li>
           {% else %}
             <li><a href="{{ url_for('member_dashboard') }}" class="nav-link">Dashboard</a></li>
             <li><a href="{{ url_for('member_expenses') }}" class="nav-link">My Expenses</a></li>
             <li><a href="{{ url_for('member_activity') }}" class="nav-link">My History</a></li>
+            <li><a href="{{ url_for('member_marketplace') }}" class="nav-link">Marketplace</a></li>
             <li><a href="{{ url_for('member_rewards') }}" class="nav-link">My Rewards</a></li>
           {% endif %}
           <li><a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm">Log Out ({{ current_user.username }})</a></li>

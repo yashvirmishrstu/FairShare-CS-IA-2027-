@@ -61,9 +61,9 @@
           <tr>
             <th>Code</th>
             <th>Member Details</th>
-            <th>Points Earned</th>
+            <th>Points Balance</th>
             <th>Discount</th>
-            <th>Earned Share</th>
+            <th>Yearly Fee</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -77,9 +77,19 @@
                 <strong>{{ m.full_name }}</strong><br>
                 <span style="font-size: 0.8rem; color: var(--text-muted);">{{ m.email }}</span>
               </td>
-              <td><strong>{{ "%.1f"|format(r.engagement_score) }}</strong></td>
+              <td>
+                <strong>{{ "%.1f"|format(r.points_balance) }}</strong>
+                <span style="font-size: 0.72rem; color: var(--text-dim);">/ {{ "%.1f"|format(r.engagement_score) }} earned</span>
+              </td>
               <td><span class="badge badge-emerald">{{ "%.0f"|format(r.discount_percentage) }}%</span></td>
-              <td>${{ "%.2f"|format(r.earned_profit_share) }}</td>
+              <td>
+                {% if m.fee_paid %}
+                  <span class="badge badge-emerald">Paid</span>
+                {% else %}
+                  <span style="font-size: 0.8rem;">${{ "%.2f"|format(m.yearly_fee) }}</span>
+                  <span style="font-size: 0.7rem; color: var(--text-dim); display: block;">${{ "%.2f"|format(m.fee_points_applied) }} via points</span>
+                {% endif %}
+              </td>
               <td>
                 <details style="cursor: pointer;">
                   <summary class="btn btn-secondary btn-sm">Edit</summary>
@@ -93,6 +103,11 @@
                       <option value="Premium" {% if m.membership_type|lower == 'premium' %}selected{% endif %}>Premium (&times;{{ settings.premium_multiplier }})</option>
                       <option value="VIP" {% if m.membership_type|lower == 'vip' %}selected{% endif %}>VIP (&times;{{ settings.vip_multiplier }})</option>
                     </select>
+                    <label class="form-label" style="font-size: 0.75rem;">Yearly Fee ($)</label>
+                    <input type="number" step="10.00" min="0" name="yearly_fee" value="{{ m.yearly_fee }}" class="form-control" style="margin-bottom: 0.4rem;">
+                    <label class="form-check" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; margin-bottom: 0.4rem;">
+                      <input type="checkbox" name="fee_paid" {% if m.fee_paid %}checked{% endif %}> Mark fee paid
+                    </label>
                     <button type="submit" class="btn btn-emerald btn-sm" style="width: 100%;">Save Changes</button>
                   </form>
                 </details>

@@ -34,9 +34,9 @@
   </div>
 
   <div class="card stat-card red">
-    <span class="stat-label">Earned Profit Share</span>
-    <span class="stat-value">${{ "%.2f"|format(rewards.earned_profit_share) }}</span>
-    <span class="stat-desc">Your share of current pool</span>
+    <span class="stat-label">Spendable Points</span>
+    <span class="stat-value">{{ "%.0f"|format(rewards.points_balance) }}<span style="font-size: 0.55em; opacity: 0.85;"> pts</span></span>
+    <span class="stat-desc">Available in the points marketplace</span>
   </div>
 
   <div class="card stat-card purple">
@@ -104,9 +104,20 @@
   <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
     <div>
       <h3 style="font-size: 1.4rem; margin-bottom: 0.25rem;">My Rewards</h3>
-      <p style="opacity: 0.9; font-size: 0.95rem;">{{ "%.0f"|format(rewards.discount_percentage) }}% personal discount · ${{ "%.2f"|format(rewards.earned_profit_share) }} earned profit share — redeem at checkout.</p>
+      <p style="opacity: 0.9; font-size: 0.95rem;">{{ "%.0f"|format(rewards.discount_percentage) }}% personal discount &middot; {{ "%.0f"|format(rewards.points_balance) }} spendable points — redeem at checkout.</p>
     </div>
     <span class="btn" style="background: var(--on-tertiary); color: var(--tertiary); border-color: var(--border-glass); padding: 1rem 2rem; font-size: 1.05rem; white-space: nowrap;">View Rewards &rarr;</span>
+  </div>
+</a>
+
+<!-- Points Marketplace — bold red color-blocked CTA -->
+<a href="{{ url_for('member_marketplace') }}" class="card card-red dash-cta-red" style="display: block; text-decoration: none; padding: 2rem; margin-bottom: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h3 style="font-size: 1.4rem; margin-bottom: 0.25rem;">Points Marketplace</h3>
+      <p style="opacity: 0.9; font-size: 0.95rem;">Spend {{ "%.0f"|format(rewards.points_balance) }} points on facility passes, dining vouchers &amp; discounts — or credit them toward your yearly membership fee.</p>
+    </div>
+    <span class="btn" style="background: var(--on-primary); color: var(--primary); border-color: var(--border-glass); padding: 1rem 2rem; font-size: 1.05rem; white-space: nowrap;">Go to Marketplace &rarr;</span>
   </div>
 </a>
 

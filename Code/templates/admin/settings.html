@@ -9,7 +9,7 @@
       <span class="badge badge-black" style="margin-bottom: 0.5rem;">Algorithmic Engine Configuration</span>
       <h2>Reward Algorithm Weighting Parameters</h2>
       <p style="color: var(--text-muted); font-size: 0.9rem;">
-        Modify the mathematical weights used to calculate members' total points earned and the total profit-sharing pool amount available for distribution.
+        Modify the mathematical weights used to calculate members' total points earned, the reward pool that funds the coupon marketplace, and the dollar value of each point against yearly membership fees.
       </p>
     </div>
 
@@ -58,9 +58,15 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">Profit-Sharing Pool Amount ($)</label>
+        <label class="form-label">Marketplace Reward Pool ($)</label>
         <input type="number" step="100.00" min="0" name="profit_sharing_pool" class="form-control" value="{{ settings.profit_sharing_pool }}" data-non-negative required>
-        <span style="font-size: 0.75rem; color: var(--text-dim);">Total monetary pool distributed proportionally based on total points earned.</span>
+        <span style="font-size: 0.75rem; color: var(--text-dim);">Total budget backing the coupon catalog in the points marketplace.</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Points Value Against Yearly Fee ($ per point)</label>
+        <input type="number" step="0.05" min="0" name="points_value_dollars" class="form-control" value="{{ settings.points_value_dollars }}" data-non-negative required>
+        <span style="font-size: 0.75rem; color: var(--text-dim);">Each point is worth this much in dollars when credited toward a member's yearly club fee.</span>
       </div>
 
       <button type="submit" class="btn btn-emerald" style="width: 100%; margin-top: 1rem; padding: 0.8rem;">

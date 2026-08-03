@@ -1,7 +1,7 @@
 import pytest
 import os
 from database import init_db, get_db
-from models import EngagementEngine, RewardSettings, FacilityTracker, GuestManager, CSVReportGenerator
+from models import EngagementEngine, RewardSettings, FacilityTracker, GuestManager, CSVReportGenerator, MarketplaceManager
 
 @pytest.fixture(autouse=True)
 def setup_test_database(tmp_path, monkeypatch):
@@ -222,9 +222,9 @@ def test_batch_scores_match_single_member_lookup():
 
 
 def test_recalculate_all_upserts_rewards_and_preserves_codes():
-    """recalculate_all() creates one active reward row per member and updates
-    (never duplicates) them on subsequent calls, keeping redemption codes
-    stable across recomputes."""
+    """A scoring write marks the cache dirty (trigger); recalculate_all() then
+    creates one active reward row per member and updates (never duplicates)
+    them on subsequent changes, keeping redemption codes stable."""
     # No reward rows exist yet
     conn = get_db()
     cursor = conn.cursor()
@@ -232,6 +232,14 @@ def test_recalculate_all_upserts_rewards_and_preserves_codes():
     assert cursor.fetchone()[0] == 0
     cursor.execute("SELECT id FROM members")
     member_ids = [r['id'] for r in cursor.fetchall()]
+    conn.close()
+
+    # A scoring write fires the dirty trigger; the recompute materializes rows
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value) "
+                   "VALUES (?, 'purchase', 'Initial Purchase', 10.0)", (member_ids[0],))
+    conn.commit()
     conn.close()
 
     rewards_map = EngagementEngine.recalculate_all()
@@ -265,16 +273,170 @@ def test_recalculate_all_upserts_rewards_and_preserves_codes():
     assert second[member_ids[0]][1] > rewards_map[member_ids[0]]['engagement_score']
 
 
-def test_rewards_view_and_csv_export_are_read_only():
-    """view_all_rewards() and the financial CSV export must never write to the
-    database — reading a page or downloading a report is a pure GET."""
+def test_marketplace_coupons_seeded_and_active():
+    """The demo coupon catalog is seeded with active, affordably-priced
+    coupons spanning the marketplace categories."""
+    coupons = MarketplaceManager.get_active_coupons()
+    assert len(coupons) >= 4
+    assert all(c['active'] == 1 for c in coupons)
+    assert all(c['cost_points'] > 0 for c in coupons)
+    categories = {c['category'] for c in coupons}
+    assert 'Facility' in categories
+
+
+def test_claim_coupon_deducts_points_and_issues_code():
+    """Claiming a coupon deducts points, records a ledger entry, and issues
+    a unique CPN- code linked to the member."""
     conn = get_db()
     cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+
+    EngagementEngine.recalculate_all()
+    before = EngagementEngine.view_member_rewards(alice_id)
+    coupon = MarketplaceManager.get_active_coupons()[0]
+
+    result = MarketplaceManager.claim_coupon(alice_id, coupon['id'])
+    assert result['ok'] is True
+    assert result['coupon_code'].startswith('CPN-')
+
+    after = EngagementEngine.view_member_rewards(alice_id)
+    assert after['points_balance'] == round(before['points_balance'] - coupon['cost_points'], 2)
+    assert after['points_spent'] == round(before['points_spent'] + coupon['cost_points'], 2)
+
+    claimed = MarketplaceManager.get_member_coupons(alice_id)
+    assert len(claimed) == 1
+    assert claimed[0]['coupon_code'] == result['coupon_code']
+    assert claimed[0]['name'] == coupon['name']
+
+    ledger = MarketplaceManager.get_point_transactions(alice_id)
+    assert ledger and ledger[0]['points_delta'] == -coupon['cost_points']
+
+
+def test_claim_coupon_rejects_insufficient_balance():
+    """A member without enough spendable points cannot claim an expensive
+    coupon, and no ledger entry is written."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+
+    EngagementEngine.recalculate_all()
+    # Spend every point Alice has on a coupon first
+    coupons = MarketplaceManager.get_active_coupons()
+    cheapest = min(coupons, key=lambda c: c['cost_points'])
+    # Drain the balance by claiming the cheapest coupon repeatedly via direct ledger writes
+    balance = EngagementEngine.view_member_rewards(alice_id)['points_balance']
+    cursor = get_db()
+    cur = cursor.cursor()
+    cur.execute("INSERT INTO point_transactions (member_id, points_delta, reason) VALUES (?, ?, ?)",
+                (alice_id, -balance, 'Test drain'))
+    cursor.commit()
+    cursor.close()
+
+    result = MarketplaceManager.claim_coupon(alice_id, cheapest['id'])
+    assert result['ok'] is False
+    assert 'Insufficient points' in result['message']
+    assert len(MarketplaceManager.get_member_coupons(alice_id)) == 0
+
+
+def test_apply_points_to_fee_credits_dollars():
+    """Points convert to dollars at the configured rate and reduce the
+    remaining yearly fee; over-crediting clamps to the exact fee balance."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+
+    EngagementEngine.recalculate_all()
+    settings = RewardSettings.get_settings()
+    rate = settings['points_value_dollars']
+    fee_before = MarketplaceManager.get_member_fee(alice_id)
+
+    result = MarketplaceManager.apply_points_to_fee(alice_id, 100)
+    assert result['ok'] is True
+    assert result['credited'] == round(100 * rate, 2)
+    assert result['remaining'] == round(fee_before['remaining'] - 100 * rate, 2)
+
+    fee_after = MarketplaceManager.get_member_fee(alice_id)
+    assert fee_after['fee_points_applied'] == round(fee_before['fee_points_applied'] + 100 * rate, 2)
+    assert fee_after['remaining'] == result['remaining']
+
+    # Balance shrinks by the points spent
+    rewards = EngagementEngine.view_member_rewards(alice_id)
+    assert rewards['points_spent'] == 100.0
+
+
+def test_apply_points_to_fee_pays_off_and_marks_paid():
+    """Crediting enough points to cover the whole fee marks it paid and
+    rejects further applications."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    # Set a small yearly fee so Alice's points can fully cover it
+    cursor.execute("UPDATE members SET yearly_fee = 50.0 WHERE id = ?", (alice_id,))
+    conn.commit()
+    conn.close()
+
+    EngagementEngine.recalculate_all()
+    fee = MarketplaceManager.get_member_fee(alice_id)
+    rate = fee['points_value_dollars']
+    needed_points = int(fee['remaining'] / rate) + 1  # slightly over
+
+    result = MarketplaceManager.apply_points_to_fee(alice_id, needed_points)
+    assert result['ok'] is True
+    assert result['remaining'] == 0.0
+
+    fee_after = MarketplaceManager.get_member_fee(alice_id)
+    assert fee_after['fee_paid'] is True
+    assert fee_after['remaining'] == 0.0
+
+    # Further credit rejected once paid
+    blocked = MarketplaceManager.apply_points_to_fee(alice_id, 10)
+    assert blocked['ok'] is False
+    assert 'already paid' in blocked['message']
+
+
+def test_points_balance_equals_earned_minus_spent():
+    """points_balance is exactly lifetime earned minus everything spent in
+    the ledger, and never dips below zero."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Bob Smith'")
+    bob_id = cursor.fetchone()['id']
+    conn.close()
+
+    EngagementEngine.recalculate_all()
+    rewards = EngagementEngine.view_member_rewards(bob_id)
+    assert rewards['points_balance'] == round(rewards['engagement_score'] - rewards['points_spent'], 2)
+    assert rewards['points_balance'] >= 0
+
+    # After a coupon claim the identity still holds
+    coupons = MarketplaceManager.get_active_coupons()
+    affordable = [c for c in coupons if c['cost_points'] <= rewards['points_balance']]
+    if affordable:
+        MarketplaceManager.claim_coupon(bob_id, affordable[0]['id'])
+        rewards2 = EngagementEngine.view_member_rewards(bob_id)
+        assert rewards2['points_balance'] == round(rewards2['engagement_score'] - rewards2['points_spent'], 2)
+
+
+def test_rewards_view_and_csv_export_are_read_only_when_clean():
+    """When the rewards cache is clean (no scoring write since the last
+    recompute), view_all_rewards() and the financial CSV export never write to
+    the database — a fresh DB starts clean, so these are pure reads."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT pending FROM rewards_recompute WHERE id = 1")
+    assert cursor.fetchone()['pending'] == 0  # fresh DB starts clean
     cursor.execute("SELECT COUNT(*) FROM rewards")
     assert cursor.fetchone()[0] == 0
     conn.close()
 
-    # Both read paths run on an empty rewards table and must not create rows
+    # Clean cache: both read paths must not create reward rows
     view = EngagementEngine.view_all_rewards()
     assert len(view) > 0  # summaries computed on the fly for seeded members
 
@@ -285,5 +447,82 @@ def test_rewards_view_and_csv_export_are_read_only():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM rewards")
-    assert cursor.fetchone()[0] == 0, "read-only views must not insert reward rows"
+    assert cursor.fetchone()[0] == 0, "clean-cache views must not insert reward rows"
+    conn.close()
+
+
+def test_scoring_write_marks_dirty_and_recompute_clears():
+    """A scoring-relevant write fires a SQLite trigger that sets the recompute
+    flag; recalculate_all() materializes rows and clears it."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members LIMIT 1")
+    m_id = cursor.fetchone()['id']
+    cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value) "
+                   "VALUES (?, 'purchase', 'Dirty Me', 5.0)", (m_id,))
+    conn.commit()
+    cursor.execute("SELECT pending FROM rewards_recompute WHERE id = 1")
+    assert cursor.fetchone()['pending'] == 1, "trigger must mark the cache dirty"
+    conn.close()
+
+    EngagementEngine.recalculate_all()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT pending FROM rewards_recompute WHERE id = 1")
+    assert cursor.fetchone()['pending'] == 0
+    cursor.execute("SELECT COUNT(*) FROM rewards WHERE status='active'")
+    assert cursor.fetchone()[0] > 0
+    conn.close()
+
+
+def test_view_lazily_materializes_once_when_dirty():
+    """The first rewards view after a scoring write materializes rows and
+    clears the flag; a second view writes nothing (pure read)."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members LIMIT 1")
+    m_id = cursor.fetchone()['id']
+    cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value) "
+                   "VALUES (?, 'purchase', 'Lazy', 5.0)", (m_id,))
+    conn.commit()
+    cursor.execute("SELECT COUNT(*) FROM rewards")
+    assert cursor.fetchone()[0] == 0
+    conn.close()
+
+    view = EngagementEngine.view_all_rewards()
+    assert m_id in view
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM rewards WHERE status='active'")
+    n1 = cursor.fetchone()[0]
+    cursor.execute("SELECT pending FROM rewards_recompute WHERE id = 1")
+    assert cursor.fetchone()['pending'] == 0
+    conn.close()
+    assert n1 > 0
+
+    EngagementEngine.view_all_rewards()  # flag clean now — no writes
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM rewards WHERE status='active'")
+    assert cursor.fetchone()[0] == n1
+    conn.close()
+
+
+def test_recalculate_all_force_writes_even_when_clean():
+    """force=True materializes reward rows even when the cache is clean."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT pending FROM rewards_recompute WHERE id = 1")
+    assert cursor.fetchone()['pending'] == 0
+    cursor.execute("SELECT COUNT(*) FROM rewards")
+    assert cursor.fetchone()[0] == 0
+    conn.close()
+
+    EngagementEngine.recalculate_all(force=True)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM rewards WHERE status='active'")
+    assert cursor.fetchone()[0] > 0
     conn.close()

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Marketplace - FairShare Admin{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+  <h1>Points Marketplace Manager</h1>
+  <p style="color: var(--text-muted);">Stock the coupon catalog members can claim with their points, or pause coupons that are unavailable.</p>
+</div>
+
+<div class="grid grid-cols-3" style="gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Add Coupon Form -->
+  <div class="card" style="grid-column: span 1;">
+    <h3>Add New Coupon</h3>
+    <form action="{{ url_for('admin_marketplace') }}" method="POST" style="margin-top: 1rem;">
+      <input type="hidden" name="action" value="add">
+      <div class="form-group">
+        <label class="form-label">Coupon Name *</label>
+        <input type="text" name="name" class="form-control" placeholder="e.g. Gym Day Pass" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description *</label>
+        <textarea name="description" class="form-control" rows="3" placeholder="What the member gets with this coupon" required></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <select name="category" class="form-control">
+          <option value="Facility">Facility</option>
+          <option value="Dining">Dining</option>
+          <option value="Pro Shop">Pro Shop</option>
+          <option value="Membership">Membership</option>
+          <option value="Events">Events</option>
+        </select>
+      </div>
+      <div class="grid grid-cols-2" style="gap: 0.75rem;">
+        <div class="form-group">
+          <label class="form-label">Cost (pts) *</label>
+          <input type="number" step="1" min="0" name="cost_points" class="form-control" value="50" data-non-negative required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Value ($)</label>
+          <input type="number" step="0.5" min="0" name="value_amount" class="form-control" value="0" data-non-negative required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Facility Name (optional)</label>
+        <input type="text" name="facility_name" class="form-control" placeholder="e.g. Swimming Pool & Spa">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Add Coupon to Marketplace</button>
+    </form>
+  </div>
+
+  <!-- Coupon Catalog Table -->
+  <div class="card" style="grid-column: span 2;">
+    <h3>Coupon Catalog</h3>
+    <div class="table-container" style="margin-top: 1rem;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Coupon</th>
+            <th>Category</th>
+            <th>Cost</th>
+            <th>Value</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in coupons %}
+            <tr>
+              <td>
+                <strong>{{ c.name }}</strong><br>
+                <span style="font-size: 0.78rem; color: var(--text-muted);">{{ c.description }}</span>
+                {% if c.facility_name %}<br><span style="font-size: 0.72rem; color: var(--text-dim);">&rarr; {{ c.facility_name }}</span>{% endif %}
+              </td>
+              <td><span class="badge badge-blue">{{ c.category }}</span></td>
+              <td><strong>{{ "%.0f"|format(c.cost_points) }}</strong> pts</td>
+              <td>{% if c.value_amount > 0 %}${{ "%.2f"|format(c.value_amount) }}{% else %}&mdash;{% endif %}</td>
+              <td>
+                {% if c.active %}
+                  <span class="badge badge-emerald">Active</span>
+                {% else %}
+                  <span class="badge badge-black">Paused</span>
+                {% endif %}
+              </td>
+              <td>
+                <form action="{{ url_for('admin_marketplace') }}" method="POST">
+                  <input type="hidden" name="action" value="toggle">
+                  <input type="hidden" name="coupon_id" value="{{ c.id }}">
+                  <button type="submit" class="btn btn-sm {% if c.active %}btn-secondary{% else %}btn-emerald{% endif %}">
+                    {% if c.active %}Pause{% else %}Activate{% endif %}
+                  </button>
+                </form>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" style="text-align:center; color: var(--text-dim);">No coupons in the catalog yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

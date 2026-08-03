@@ -16,10 +16,14 @@
   <div class="card" id="scanner-card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
       <h3>Scanner</h3>
-      {% if active_checkin %}
-        <span class="badge badge-emerald">Session Active</span>
-      {% else %}
-      {% endif %}
+      <div style="display: flex; align-items: center; gap: 0.6rem;">
+        {% if active_checkin %}
+          <span class="badge badge-emerald">Session Active</span>
+        {% endif %}
+        <span class="badge badge-blue" id="session-points-badge" style="display: none;">
+          <span id="session-points-value">0</span> pts this session
+        </span>
+      </div>
     </div>
 
     <!-- Active Session Status -->
