@@ -72,7 +72,7 @@ def test_member_scan_admin_redirects_not_crash(client):
 def test_guest_dashboard_requires_signin(client):
     # No guest session -> bounced to the unified login page's guest tab
     response = client.get('/guest/dashboard', follow_redirects=True)
-    assert b'Member / Admin' in response.data
+    assert b'Sign In' in response.data
     assert b'Guest Pass Code' in response.data
 
 def test_guest_day_pass_login_and_tracking(client):
@@ -95,7 +95,7 @@ def test_guest_day_pass_login_and_tracking(client):
     # Unified login page renders with the guest tab
     response = client.get('/login?tab=guest')
     assert response.status_code == 200
-    assert b'Member / Admin' in response.data
+    assert b'Sign In' in response.data
     assert b'Guest Pass Code' in response.data
 
     # Invalid code rejected
@@ -251,7 +251,7 @@ def test_guest_day_pass_expires_next_day(client):
 
     response = client.get('/guest/dashboard', follow_redirects=True)
     assert b'day pass has expired' in response.data
-    assert b'Member / Admin' in response.data
+    assert b'Sign In' in response.data
     assert b'Guest Pass Code' in response.data
 
 def test_admin_issues_receipt_and_member_scans(client):

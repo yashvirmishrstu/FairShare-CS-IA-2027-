@@ -32,7 +32,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER UNIQUE NOT NULL,
             full_name TEXT NOT NULL,
-            membership_type TEXT NOT NULL DEFAULT 'Standard',
+            membership_type TEXT NOT NULL DEFAULT 'Member',
             email TEXT NOT NULL,
             phone TEXT,
             member_code TEXT UNIQUE NOT NULL,
@@ -143,9 +143,9 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'member'")
     if cursor.fetchone()[0] == 0:
         demo_members = [
-            ("alice", "password123", "Alice Johnson", "VIP Gold", "alice@example.com", "555-0101", "MBR-1001"),
-            ("bob", "password123", "Bob Smith", "Standard", "bob@example.com", "555-0102", "MBR-1002"),
-            ("charlie", "password123", "Charlie Davis", "Platinum", "charlie@example.com", "555-0103", "MBR-1003")
+            ("alice", "password123", "Alice Johnson", "Member", "alice@example.com", "555-0101", "MBR-1001"),
+            ("bob", "password123", "Bob Smith", "Member", "bob@example.com", "555-0102", "MBR-1002"),
+            ("charlie", "password123", "Charlie Davis", "Member", "charlie@example.com", "555-0103", "MBR-1003")
         ]
         
         for username, plain_pw, full_name, mtype, email, phone, mcode in demo_members:

@@ -5,7 +5,7 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem;">
   <div>
-    <span class="badge badge-blue" style="margin-bottom: 0.5rem;">{{ member.membership_type }} Member</span>
+    <span class="badge badge-blue" style="margin-bottom: 0.5rem;">Club Member</span>
     <h1 style="font-size: 2.2rem;">Welcome back, {{ member.full_name }}!</h1>
     <p style="color: var(--text-muted); font-size: 0.95rem;">Member Code: <code>{{ member.member_code }}</code> | Joined: {{ member.join_date[:10] }}</p>
   </div>

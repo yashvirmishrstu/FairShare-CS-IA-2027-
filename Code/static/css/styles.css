@@ -26,7 +26,7 @@
 
   --accent-emerald: #d2a600;   /* success/highlight -> yellow */
   --accent-cyan: #2850ce;      /* info -> blue */
-  --accent-purple: #755b00;    /* tier/bronze */
+  --accent-purple: #755b00;
   --accent-rose: #a9000e;      /* danger -> red */
   --accent-amber: #d2a600;     /* warning -> yellow */
 
@@ -43,8 +43,9 @@
   --radius-lg: 0px;
   --radius-full: 9999px;       /* pill — organic accents only */
 
-  --shadow-subtle: 4px 4px 0 0 var(--ink);
-  --shadow-glow: 8px 8px 0 0 var(--ink);
+  --shadow-color: var(--ink);         /* hard structural shadow — noir black in dark */
+  --shadow-subtle: 4px 4px 0 0 var(--shadow-color);
+  --shadow-glow: 8px 8px 0 0 var(--shadow-color);
   --glass-backdrop: none;
 
   --spacing-unit: 8px;

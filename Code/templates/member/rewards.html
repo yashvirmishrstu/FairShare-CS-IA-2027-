@@ -12,7 +12,7 @@
   <!-- Reward Overview Card -->
   <div class="card">
     <span class="badge badge-emerald" style="margin-bottom: 0.5rem;">Active Reward Voucher</span>
-    <h2 style="font-size: 2rem; margin-bottom: 0.25rem;">{{ "%.0f"|format(rewards.discount_percentage) }}% Discount Tier</h2>
+    <h2 style="font-size: 2rem; margin-bottom: 0.25rem;">{{ "%.0f"|format(rewards.discount_percentage) }}% Discount</h2>
     <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">Engagement Score: <strong>{{ "%.1f"|format(rewards.engagement_score) }} points</strong></p>
 
     <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; margin-bottom: 1.5rem;">
@@ -47,7 +47,7 @@
   </div>
 </div>
 
-<!-- Dynamic Discount Tier Scale Card -->
+<!-- Dynamic Discount Scale Card -->
 <div class="card">
   <h3>Dynamic Engagement & Discount Scale</h3>
   <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">Higher engagement unlocks higher rewards without administrator intervention.</p>
@@ -56,25 +56,25 @@
     <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--ink);">
       <strong style="color: var(--text-muted);">0 - 49 Points</strong>
       <h4 style="font-size: 1.3rem;">0% Discount</h4>
-      <span style="font-size: 0.8rem; color: var(--text-dim);">Standard Entry Tier</span>
+      <span style="font-size: 0.8rem; color: var(--text-dim);">Entry Level</span>
     </div>
 
     <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--primary);">
       <strong style="color: var(--primary);">50 - 99 Points</strong>
       <h4 style="font-size: 1.3rem;">5% Discount</h4>
-      <span style="font-size: 0.8rem; color: var(--text-dim);">Bronze Loyalty Tier</span>
+      <span style="font-size: 0.8rem; color: var(--text-dim);">Bronze Level</span>
     </div>
 
     <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--secondary);">
       <strong style="color: var(--secondary);">100 - 199 Points</strong>
       <h4 style="font-size: 1.3rem;">10% Discount</h4>
-      <span style="font-size: 0.8rem; color: var(--text-dim);">Silver Loyalty Tier</span>
+      <span style="font-size: 0.8rem; color: var(--text-dim);">Silver Level</span>
     </div>
 
     <div style="background: var(--tertiary-soft); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--tertiary);">
       <strong style="color: var(--ink);">200+ Points</strong>
       <h4 style="font-size: 1.3rem;">15% - 20% Discount</h4>
-      <span style="font-size: 0.8rem; color: var(--text-dim);">Gold & Platinum Tier</span>
+      <span style="font-size: 0.8rem; color: var(--text-dim);">Gold Level</span>
     </div>
   </div>
 </div>

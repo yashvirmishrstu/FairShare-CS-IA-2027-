@@ -701,7 +701,7 @@ def admin_members():
         full_name = request.form.get('full_name', '').strip()
         email = request.form.get('email', '').strip()
         phone = request.form.get('phone', '').strip()
-        membership_type = request.form.get('membership_type', 'Standard')
+        membership_type = request.form.get('membership_type', 'Member')
 
         if not username or not password or not full_name or not email:
             flash('Required fields missing for member creation.', 'danger')
@@ -743,7 +743,7 @@ def admin_member_edit(member_id):
     full_name = request.form.get('full_name', '').strip()
     email = request.form.get('email', '').strip()
     phone = request.form.get('phone', '').strip()
-    membership_type = request.form.get('membership_type', 'Standard')
+    membership_type = request.form.get('membership_type', 'Member')
 
     if not full_name or not email:
         flash('Full name and email are required.', 'danger')
