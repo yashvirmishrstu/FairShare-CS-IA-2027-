@@ -6,7 +6,7 @@
   <title>{% block title %}FairShare - Personalized Club Rewards & Profit Sharing{% endblock %}</title>
 
   <!-- CSS Styles -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=4">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=10">
 
   <!-- Outfit typeface -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,27 +29,20 @@
           <rect x="12" y="2" width="10" height="10"></rect>
         </svg>
         FairShare
-        <span class="brand-badge">Club Portal</span>
       </a>
 
-      <button type="button" id="nav-toggle" class="nav-toggle" aria-label="Toggle navigation menu" style="display:none; background:var(--surface-hi); border:4px solid var(--ink); padding:0.4rem 0.6rem; cursor:pointer; font-size:1.3rem; color:var(--ink);">
+      <button type="button" id="nav-toggle" class="nav-toggle" aria-label="Toggle navigation menu" style="display:none; background:var(--surface-hi); border:4px solid var(--border-glass); padding:0.4rem 0.6rem; cursor:pointer; font-size:1.3rem; color:var(--ink);">
         <span class="nav-toggle-icon">☰</span>
       </button>
 
       <ul class="nav-links" id="nav-links">
-        <li><button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
-          <span class="theme-toggle-icon">◐</span>
-        </button></li>
         {% if current_user %}
           {% if current_user.role == 'admin' %}
-            <li><a href="{{ url_for('admin_dashboard') }}" class="nav-link">Admin Dashboard</a></li>
+            <li><a href="{{ url_for('admin_dashboard') }}" class="nav-link">Dashboard</a></li>
             <li><a href="{{ url_for('admin_members') }}" class="nav-link">Members</a></li>
-            <li><a href="{{ url_for('admin_activity') }}" class="nav-link">Activity Log</a></li>
-            <li><a href="{{ url_for('admin_settings') }}" class="nav-link">Algorithm Settings</a></li>
-            <li><a href="{{ url_for('admin_reports') }}" class="nav-link">CSV Reports</a></li>
+            <li><a href="{{ url_for('admin_activity') }}" class="nav-link">Activity</a></li>
           {% else %}
             <li><a href="{{ url_for('member_dashboard') }}" class="nav-link">Dashboard</a></li>
-            <li><a href="{{ url_for('member_scan') }}" class="nav-link">Scan Facility</a></li>
             <li><a href="{{ url_for('member_expenses') }}" class="nav-link">My Expenses</a></li>
             <li><a href="{{ url_for('member_activity') }}" class="nav-link">My History</a></li>
             <li><a href="{{ url_for('member_rewards') }}" class="nav-link">My Rewards</a></li>
@@ -64,7 +57,6 @@
             </form>
           </li>
         {% else %}
-          <li><a href="{{ url_for('guest_quick') }}" class="nav-link">Guest Check-In</a></li>
           <li><a href="{{ url_for('login') }}" class="btn btn-primary btn-sm">Log In</a></li>
         {% endif %}
       </ul>
@@ -102,6 +94,6 @@
   </footer>
 
   <!-- App Interactive JavaScript -->
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=4"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=7"></script>
 </body>
 </html>

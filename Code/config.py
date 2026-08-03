@@ -10,4 +10,7 @@ class Config:
     DEFAULT_VISIT_WEIGHT = 10.0      # 10 points per visit
     DEFAULT_SPENDING_WEIGHT = 0.5     # 0.5 points per $ spent
     DEFAULT_REFERRAL_WEIGHT = 50.0   # 50 points per guest referral
+    DEFAULT_FACILITY_WEIGHT = 0.2     # 0.2 points per facility-minute used
+    DEFAULT_LOYALTY_WEIGHT = 5.0      # 5 points per month of membership
+    DEFAULT_TIER_MULTIPLIERS = {'Member': 1.0, 'Premium': 1.15, 'VIP': 1.30}
     DEFAULT_PROFIT_POOL = 10000.00   # $10,000 profit sharing pool

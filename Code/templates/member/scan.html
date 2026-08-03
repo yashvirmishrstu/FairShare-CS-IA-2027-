@@ -19,7 +19,6 @@
       {% if active_checkin %}
         <span class="badge badge-emerald">Session Active</span>
       {% else %}
-        <span class="badge badge-blue">Ready to Scan</span>
       {% endif %}
     </div>
 
@@ -36,7 +35,7 @@
             </p>
           </div>
         </div>
-        <p style="color: var(--ink); font-size: 0.8rem; margin-top: 0.75rem; border-top: 2px solid var(--ink); padding-top: 0.6rem;">
+        <p style="color: var(--ink); font-size: 0.8rem; margin-top: 0.75rem; border-top: 2px solid var(--border-glass); padding-top: 0.6rem;">
           Scan the <strong>{{ active_checkin.facility_name }}</strong> barcode again to check out.
         </p>
       </div>

@@ -9,15 +9,18 @@
     <h1 style="font-size: 2.2rem;">Welcome back, {{ member.full_name }}!</h1>
     <p style="color: var(--text-muted); font-size: 0.95rem;">Member Code: <code>{{ member.member_code }}</code> | Joined: {{ member.join_date[:10] }}</p>
   </div>
-  <a href="{{ url_for('member_activity') }}" class="btn btn-primary">View My History</a>
+  <div style="display: flex; gap: 0.75rem;">
+    <a href="{{ url_for('member_scan') }}" class="btn btn-secondary">Go to Scanner &rarr;</a>
+    <a href="{{ url_for('member_activity') }}" class="btn btn-primary">View My History</a>
+  </div>
 </div>
 
 <!-- Stat Cards -->
 <div class="grid grid-cols-4" style="margin-bottom: 2rem;">
   <div class="card stat-card blue">
-    <span class="stat-label">Engagement Score</span>
-    <span class="stat-value">{{ "%.1f"|format(rewards.engagement_score) }}</span>
-    <span class="stat-desc">Calculated from visits & spending</span>
+    <span class="stat-label">Total Points Earned</span>
+    <span class="stat-value">{{ "%.0f"|format(rewards.engagement_score) }}<span style="font-size: 0.55em; opacity: 0.85;"> pts</span></span>
+    <span class="stat-desc">Visits, spending, referrals, facility use & loyalty</span>
   </div>
 
   <div class="card stat-card emerald">
@@ -33,42 +36,39 @@
   </div>
 
   <div class="card stat-card purple">
-    <span class="stat-label">Total Value Generated</span>
-    <span class="stat-value">${{ "%.2f"|format(rewards.details.total_spending) }}</span>
-    <span class="stat-desc">${{ "%.2f"|format(rewards.details.direct_spending) }} direct + ${{ "%.2f"|format(rewards.details.guest_spending) }} guests</span>
+    <span class="stat-label">Facility Usage</span>
+    <span class="stat-value">{{ rewards.details.facility_minutes }}<span style="font-size: 0.55em; opacity: 0.85;"> mins</span></span>
+    <span class="stat-desc">{{ rewards.details.visit_count }} visits &middot; {{ rewards.details.loyalty_months }} months &middot; {{ rewards.details.membership_type }} tier</span>
   </div>
 </div>
 
-<div class="grid grid-cols-2" style="gap: 1.5rem; margin-bottom: 2rem;">
-  <!-- Facility Barcode Scanner Card -->
-  <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
-      <h3>Facility Barcode Scanner</h3>
-      {% if active_checkin %}
-        <span class="badge badge-emerald">Session Active</span>
-      {% else %}
-        <span class="badge badge-blue">Ready to Scan</span>
-      {% endif %}
+<!-- Scan Facility — prominent color-blocked CTA -->
+{% if active_checkin %}
+  <div class="session-active" style="margin-bottom: 2rem; padding: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <span class="badge badge-emerald" style="margin-bottom: 0.5rem;">Session Active</span>
+        <h3 style="margin: 0.25rem 0;">{{ active_checkin.facility_name }}</h3>
+        <p style="color: var(--ink); font-size: 0.9rem;">Started at {{ active_checkin.check_in_time[11:16] }} — scan the same barcode again to check out.</p>
+      </div>
+      <a href="{{ url_for('member_scan') }}" class="btn btn-primary" style="padding: 1rem 2rem; font-size: 1rem;">Open Scanner &rarr;</a>
     </div>
-    <p style="color: var(--text-muted); font-size: 0.85rem;">Scan the barcode posted at a facility entrance to start your session timer. Scan it again to check out.</p>
-
-    {% if active_checkin %}
-      <div class="session-active" style="margin-top: 1rem;">
-        <p style="font-weight: 800; color: var(--ink); font-size: 0.95rem;">{{ active_checkin.facility_name }}</p>
-        <p style="color: var(--ink); font-size: 0.85rem; margin-top: 0.2rem;">Started at {{ active_checkin.check_in_time[11:16] }} — scan the same barcode again to check out.</p>
-      </div>
-    {% else %}
-      <div style="padding: 1.25rem 0; text-align: center;">
-        <p style="color: var(--text-dim); font-size: 0.85rem;">No active facility session.</p>
-        <p style="color: var(--text-dim); font-size: 0.8rem; margin-top: 0.35rem;">Scan a facility barcode to start your timer.</p>
-      </div>
-    {% endif %}
-
-    <a href="{{ url_for('member_scan') }}" class="btn btn-primary btn-sm" style="width: 100%; margin-top: 1rem;">Open Barcode Scanner &rarr;</a>
   </div>
+{% else %}
+  <a href="{{ url_for('member_scan') }}" class="card card-red" style="display: block; text-decoration: none; padding: 2rem; margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h3 style="font-size: 1.4rem; margin-bottom: 0.25rem;">Scan a Facility Barcode</h3>
+        <p style="opacity: 0.9; font-size: 0.95rem;">Scan the barcode at any facility entrance to start your session timer. Scan again to check out and log your visit.</p>
+      </div>
+      <span class="btn" style="background: var(--on-primary); color: var(--primary); border-color: var(--border-glass); padding: 1rem 2rem; font-size: 1.05rem; white-space: nowrap;">Go to Scanner &rarr;</span>
+    </div>
+  </a>
+{% endif %}
 
+<div class="grid grid-cols-2" style="gap: 1.5rem; margin-bottom: 2rem;">
   <!-- Guest Pass Creation Card -->
-  <div class="card">
+  <div class="card" style="grid-column: span 2;">
     <h3>Create Guest Pass</h3>
     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 0.85rem;">Generate Guest ID code to earn referral points!</p>
     <form action="{{ url_for('member_guest_create') }}" method="POST">
@@ -82,7 +82,7 @@
       <div style="margin-top: 1rem; max-height: 170px; overflow-y: auto; font-size: 0.8rem;">
         <span style="color: var(--text-dim); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;">Guest Passes — show the QR to your guest:</span>
         {% for g in guests[:3] %}
-          <div style="display: flex; align-items: center; gap: 0.6rem; border-bottom: 3px solid var(--ink); padding: 0.4rem 0;">
+          <div style="display: flex; align-items: center; gap: 0.6rem; border-bottom: 3px solid var(--border-glass); padding: 0.4rem 0;">
             <div class="guest-pass-qr"><div data-qr="{{ g.guest_code }}" data-qr-width="52"></div></div>
             <div style="flex: 1;">
               <p style="font-weight: 700; text-transform: uppercase;">{{ g.guest_name }}</p>

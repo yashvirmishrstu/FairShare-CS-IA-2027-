@@ -4,34 +4,31 @@
 
 {% block content %}
 <div style="position: relative; max-width: 920px; margin: 4rem auto; text-align: left;">
-  <span class="badge badge-emerald" style="margin-bottom: 1.5rem;">Transparent Profit Sharing</span>
-  <h1 class="display-hero" style="margin-bottom: 0.25rem;">
+  <span class="badge badge-emerald anim-fade-in" style="margin-bottom: 1.5rem; animation: fadeIn 0.7s ease-out both;">Transparent Profit Sharing</span>
+  <h1 class="display-hero anim-hero" style="margin-bottom: 0.25rem;">
     Rewarding active club members automatically.
   </h1>
-  <div class="rule-bar"></div>
-  <p style="color: var(--text-muted); font-size: 1.1rem; margin-bottom: 2.5rem; line-height: 1.7; max-width: 640px;">
+  <div class="rule-bar anim-rule"></div>
+  <p class="anim-text" style="color: var(--text-muted); font-size: 1.1rem; margin-bottom: 2.5rem; line-height: 1.7; max-width: 640px;">
     Say goodbye to blanket subscription fees. FairShare dynamically computes member engagement scores based on visits, restaurant spending, facility usage, and guest referrals to deliver personalized discounts and cashback.
   </p>
 
-  <div style="display: flex; justify-content: flex-start; gap: 1.25rem; flex-wrap: wrap;">
+  <div class="anim-btn" style="display: flex; justify-content: center; gap: 1.25rem; flex-wrap: wrap;">
     {% if session.user_id %}
       {% if session.role == 'admin' %}
         <a href="{{ url_for('admin_dashboard') }}" class="btn btn-primary" style="padding: 0.85rem 2rem; font-size: 1rem;">Go to Admin Control Panel &rarr;</a>
       {% else %}
         <a href="{{ url_for('member_dashboard') }}" class="btn btn-emerald" style="padding: 0.85rem 2rem; font-size: 1rem;">Open Member Dashboard &rarr;</a>
       {% endif %}
-    {% else %}
-      <a href="{{ url_for('login') }}" class="btn btn-primary" style="padding: 0.85rem 2rem; font-size: 1rem;">Member & Admin Login &rarr;</a>
-      <a href="{{ url_for('login', tab='guest') }}" class="btn btn-secondary" style="padding: 0.85rem 2rem; font-size: 1rem;">Guest Sign-In &rarr;</a>
-      <a href="{{ url_for('guest_quick') }}" class="btn btn-ghost" style="padding: 0.85rem 1.5rem; font-size: 0.9rem;">Quick Guest Purchase</a>
+    {% else %}          <a href="{{ url_for('login') }}" class="btn btn-primary" style="padding: 1.1rem 3.5rem; font-size: 1.15rem;">Member & Admin Login &rarr;</a>
     {% endif %}
   </div>
 
   <!-- Bauhaus accent blocks -->
-  <div style="display: flex; gap: 16px; margin-top: 3.5rem;">
-    <div style="width: 64px; height: 64px; background: var(--primary); border: 4px solid var(--ink);"></div>
-    <div style="width: 64px; height: 64px; background: var(--secondary); border: 4px solid var(--ink);"></div>
-    <div style="width: 64px; height: 64px; background: var(--tertiary); border: 4px solid var(--ink);"></div>
+  <div class="anim-color" style="display: flex; gap: 16px; margin-top: 3.5rem;">
+    <div style="width: 64px; height: 64px; background: var(--primary); border: 4px solid var(--border-glass);"></div>
+    <div style="width: 64px; height: 64px; background: var(--secondary); border: 4px solid var(--border-glass);"></div>
+    <div style="width: 64px; height: 64px; background: var(--tertiary); border: 4px solid var(--border-glass);"></div>
   </div>
 </div>
 {% endblock %}

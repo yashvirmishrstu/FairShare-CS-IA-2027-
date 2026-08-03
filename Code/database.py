@@ -88,6 +88,10 @@ def init_db():
             visit_weight REAL NOT NULL DEFAULT 10.0,
             spending_weight REAL NOT NULL DEFAULT 0.5,
             referral_weight REAL NOT NULL DEFAULT 50.0,
+            facility_weight REAL NOT NULL DEFAULT 0.2,
+            loyalty_weight REAL NOT NULL DEFAULT 5.0,
+            premium_multiplier REAL NOT NULL DEFAULT 1.15,
+            vip_multiplier REAL NOT NULL DEFAULT 1.30,
             profit_sharing_pool REAL NOT NULL DEFAULT 10000.00,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -125,13 +129,35 @@ def init_db():
     if 'guest_id' not in checkin_cols:
         cursor.execute("ALTER TABLE facility_checkins ADD COLUMN guest_id INTEGER REFERENCES guest_ids(id) ON DELETE CASCADE")
 
+    # Migration: add facility/loyalty/tier scoring columns to reward_settings (existing databases)
+    cursor.execute("PRAGMA table_info(reward_settings)")
+    settings_cols = [row[1] for row in cursor.fetchall()]
+    if 'facility_weight' not in settings_cols:
+        cursor.execute("ALTER TABLE reward_settings ADD COLUMN facility_weight REAL NOT NULL DEFAULT 0.2")
+    if 'loyalty_weight' not in settings_cols:
+        cursor.execute("ALTER TABLE reward_settings ADD COLUMN loyalty_weight REAL NOT NULL DEFAULT 5.0")
+    if 'premium_multiplier' not in settings_cols:
+        cursor.execute("ALTER TABLE reward_settings ADD COLUMN premium_multiplier REAL NOT NULL DEFAULT 1.15")
+    if 'vip_multiplier' not in settings_cols:
+        cursor.execute("ALTER TABLE reward_settings ADD COLUMN vip_multiplier REAL NOT NULL DEFAULT 1.30")
+
     # Seed Default Reward Settings if empty
     cursor.execute("SELECT COUNT(*) FROM reward_settings")
     if cursor.fetchone()[0] == 0:
         cursor.execute('''
-            INSERT INTO reward_settings (visit_weight, spending_weight, referral_weight, profit_sharing_pool)
-            VALUES (?, ?, ?, ?)
-        ''', (Config.DEFAULT_VISIT_WEIGHT, Config.DEFAULT_SPENDING_WEIGHT, Config.DEFAULT_REFERRAL_WEIGHT, Config.DEFAULT_PROFIT_POOL))
+            INSERT INTO reward_settings (
+                visit_weight, spending_weight, referral_weight, facility_weight,
+                loyalty_weight, premium_multiplier, vip_multiplier, profit_sharing_pool
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            Config.DEFAULT_VISIT_WEIGHT, Config.DEFAULT_SPENDING_WEIGHT,
+            Config.DEFAULT_REFERRAL_WEIGHT, Config.DEFAULT_FACILITY_WEIGHT,
+            Config.DEFAULT_LOYALTY_WEIGHT,
+            Config.DEFAULT_TIER_MULTIPLIERS['Premium'],
+            Config.DEFAULT_TIER_MULTIPLIERS['VIP'],
+            Config.DEFAULT_PROFIT_POOL
+        ))
 
     # Seed Demo Admin User if empty
     cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")

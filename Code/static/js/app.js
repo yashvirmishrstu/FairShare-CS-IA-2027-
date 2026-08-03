@@ -3,7 +3,6 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  initThemeToggle();
   initGeoDrift();
   initMobileNav();
   initClientValidation();
@@ -436,27 +435,6 @@ function initCameraScanner() {
 
   window.addEventListener('beforeunload', () => {
     if (scanner) scanner.stop().catch(() => {});
-  });
-}
-
-// Theme toggle — dark/inverse Constructivist mode, persisted to localStorage
-function initThemeToggle() {
-  const toggle = document.getElementById('theme-toggle');
-  if (!toggle) return;
-  const icon = toggle.querySelector('.theme-toggle-icon');
-
-  const apply = (theme) => {
-    document.documentElement.setAttribute('data-theme', theme);
-    if (icon) icon.textContent = theme === 'dark' ? '◑' : '◐';
-    try { localStorage.setItem('fairshare-theme', theme); } catch (e) {}
-  };
-
-  const stored = (() => { try { return localStorage.getItem('fairshare-theme'); } catch (e) { return null; } })();
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  apply(stored || (prefersDark ? 'dark' : 'light'));
-
-  toggle.addEventListener('click', () => {
-    apply(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
   });
 }
 

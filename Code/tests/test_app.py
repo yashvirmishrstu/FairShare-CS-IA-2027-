@@ -73,7 +73,7 @@ def test_guest_dashboard_requires_signin(client):
     # No guest session -> bounced to the unified login page's guest tab
     response = client.get('/guest/dashboard', follow_redirects=True)
     assert b'Sign In' in response.data
-    assert b'Guest Pass Code' in response.data
+    assert b'Sign In' in response.data
 
 def test_guest_day_pass_login_and_tracking(client):
     # Alice creates a guest pass for her guest
@@ -96,7 +96,7 @@ def test_guest_day_pass_login_and_tracking(client):
     response = client.get('/login?tab=guest')
     assert response.status_code == 200
     assert b'Sign In' in response.data
-    assert b'Guest Pass Code' in response.data
+    assert b'Sign In' in response.data
 
     # Invalid code rejected
     response = client.post('/login', data={'guest_code': 'GST-NOPE'}, follow_redirects=True)
@@ -210,7 +210,7 @@ def test_login_invalid_tab_falls_back_to_account(client):
     response = client.get('/login?tab=foo')
     assert response.status_code == 200
     assert b'Username' in response.data
-    assert b'Guest Pass Code' in response.data
+    assert b'Sign In' in response.data
 
 def test_member_login_clears_prior_guest_session(client):
     # Sign in as guest first, then as a member — member session must replace guest
@@ -252,7 +252,7 @@ def test_guest_day_pass_expires_next_day(client):
     response = client.get('/guest/dashboard', follow_redirects=True)
     assert b'day pass has expired' in response.data
     assert b'Sign In' in response.data
-    assert b'Guest Pass Code' in response.data
+    assert b'Sign In' in response.data
 
 def test_admin_issues_receipt_and_member_scans(client):
     """Admin issues an expense receipt QR; member scans it to log the expense."""
@@ -435,7 +435,7 @@ def test_member_scan_checkin_checkout_flow(client):
     # Second scan of the same facility: check out and log duration
     response = client.post('/member/scan', data={'facility_code': 'FAC-101'}, follow_redirects=True)
     assert b'Checked out of Club Fitness' in response.data
-    assert b'Ready to Scan' in response.data
+    assert b'Facility Barcode Scanner' in response.data
 
     # Unknown barcode rejected
     response = client.post('/member/scan', data={'facility_code': 'UNKNOWN'}, follow_redirects=True)

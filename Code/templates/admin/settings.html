@@ -33,6 +33,31 @@
       </div>
 
       <div class="form-group">
+        <label class="form-label">Facility Usage Weight (Points per minute)</label>
+        <input type="number" step="0.05" min="0" name="facility_weight" class="form-control" value="{{ settings.facility_weight }}" data-non-negative required>
+        <span style="font-size: 0.75rem; color: var(--text-dim);">Points awarded per minute of facility usage (gym, tennis, pool, etc.).</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Loyalty Weight (Points per month of membership)</label>
+        <input type="number" step="1.0" min="0" name="loyalty_weight" class="form-control" value="{{ settings.loyalty_weight }}" data-non-negative required>
+        <span style="font-size: 0.75rem; color: var(--text-dim);">Points awarded for each month the member has belonged to the club.</span>
+      </div>
+
+      <div class="grid grid-cols-2" style="gap: 1rem;">
+        <div class="form-group">
+          <label class="form-label">Premium Tier Multiplier (&times;)</label>
+          <input type="number" step="0.05" min="1.0" name="premium_multiplier" class="form-control" value="{{ settings.premium_multiplier }}" required>
+          <span style="font-size: 0.75rem; color: var(--text-dim);">Score boost for Premium members.</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">VIP Tier Multiplier (&times;)</label>
+          <input type="number" step="0.05" min="1.0" name="vip_multiplier" class="form-control" value="{{ settings.vip_multiplier }}" required>
+          <span style="font-size: 0.75rem; color: var(--text-dim);">Score boost for VIP members.</span>
+        </div>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Profit-Sharing Pool Amount ($)</label>
         <input type="number" step="100.00" min="0" name="profit_sharing_pool" class="form-control" value="{{ settings.profit_sharing_pool }}" data-non-negative required>
         <span style="font-size: 0.75rem; color: var(--text-dim);">Total monetary pool distributed proportionally based on engagement scores.</span>
@@ -43,9 +68,9 @@
       </button>
     </form>
 
-    <div style="margin-top: 1.5rem; background: var(--tertiary-soft); border: 4px solid var(--ink); padding: 1rem; font-size: 0.85rem; box-shadow: 4px 4px 0 0 var(--ink);">
+    <div style="margin-top: 1.5rem; background: var(--tertiary-soft); border: 4px solid var(--border-glass); padding: 1rem; font-size: 0.85rem; box-shadow: 4px 4px 0 0 var(--shadow-color);">
       <strong style="color: var(--ink); text-transform: uppercase; letter-spacing: 0.06em;">Active Mathematical Formula:</strong><br>
-      <code style="color: var(--ink);">Engagement Score = (Visits &times; {{ settings.visit_weight }}) + (Total Spending &times; {{ settings.spending_weight }}) + (Referrals &times; {{ settings.referral_weight }})</code>
+      <code style="color: var(--ink);">Engagement Score = [ (Visits &times; {{ settings.visit_weight }}) + (Total Spending &times; {{ settings.spending_weight }}) + (Referrals &times; {{ settings.referral_weight }}) + (Facility Minutes &times; {{ settings.facility_weight }}) + (Months of Membership &times; {{ settings.loyalty_weight }}) ] &times; Tier Multiplier</code>
     </div>
   </div>
 </div>

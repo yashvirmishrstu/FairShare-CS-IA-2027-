@@ -73,7 +73,7 @@
               <td>
                 <details style="cursor: pointer;">
                   <summary class="btn btn-secondary btn-sm">Edit</summary>
-                  <form action="{{ url_for('admin_member_edit', member_id=m.id) }}" method="POST" style="margin-top: 0.5rem; background: var(--surface-dim); padding: 0.75rem; border: 3px solid var(--ink);">
+                  <form action="{{ url_for('admin_member_edit', member_id=m.id) }}" method="POST" style="margin-top: 0.5rem; background: var(--surface-dim); padding: 0.75rem; border: 3px solid var(--border-glass);">
                     <input type="text" name="full_name" value="{{ m.full_name }}" class="form-control" style="margin-bottom: 0.4rem;" required>
                     <input type="email" name="email" value="{{ m.email }}" class="form-control" style="margin-bottom: 0.4rem;" required>
                     <input type="text" name="phone" value="{{ m.phone or '' }}" class="form-control" style="margin-bottom: 0.4rem;">

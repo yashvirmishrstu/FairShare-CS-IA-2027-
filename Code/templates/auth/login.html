@@ -3,21 +3,18 @@
 {% block title %}Log In - FairShare System{% endblock %}
 
 {% block content %}
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-
 <div style="max-width: 500px; margin: 2.5rem auto; position: relative;">
   <div class="card auth-login-card" style="padding: 2.25rem;">
     <div style="text-align: left; margin-bottom: 1.5rem;">
-      <span class="badge badge-red" style="margin-bottom: 0.75rem;">Unified Access</span>
+      <span class="badge badge-red" style="margin-bottom: 0.75rem;">Sign In</span>
       <h2 style="font-size: 1.9rem; margin-bottom: 0.25rem;">Sign In</h2>
-      <p style="color: var(--text-muted); font-size: 0.9rem;">One sign-in for members, admins &amp; guests — each gets its own suite.</p>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">Members and admins land in their own dashboards automatically.</p>
     </div>
 
-    <!-- Unified Login Form -->
     <form action="{{ url_for('login') }}" method="POST" id="login-form">
       <div class="form-group">
         <label class="form-label">Username</label>
-        <input type="text" name="username" class="form-control" placeholder="e.g. alice / admin" autocomplete="username" required>
+        <input type="text" name="username" class="form-control" placeholder="Enter username" autocomplete="username" autofocus required>
       </div>
 
       <div class="form-group">
@@ -29,52 +26,6 @@
         Sign In &rarr;
       </button>
     </form>
-
-    <div style="margin: 1.5rem 0; display: flex; align-items: center; gap: 1rem;">
-      <span style="flex: 1; height: 2px; background: var(--ink);"></span>
-      <span style="color: var(--text-dim); font-size: 0.85rem; font-weight: 700; letter-spacing: 0.06em;">OR</span>
-      <span style="flex: 1; height: 2px; background: var(--ink);"></span>
-    </div>
-
-    <!-- Guest Pass Section -->
-    <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1.25rem;">
-      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.9rem;">
-        <strong>Guest?</strong> Enter your Guest Pass Code. Your visit is linked to your host member and lasts for today only.
-      </p>
-
-      <button type="button" id="guest-camera-toggle" class="btn btn-ghost btn-sm" style="width: 100%; margin-bottom: 0.75rem;" data-label-on="Scan QR Code">
-        Scan QR Code
-      </button>
-      <div id="guest-camera-viewport" class="camera-viewport" style="display: none;"></div>
-      <div id="guest-scan-toast" class="scan-toast" hidden></div>
-
-      <form action="{{ url_for('login') }}" method="POST" id="guest-login-form">
-        <div class="form-group">
-          <label class="form-label">Guest Pass Code *</label>
-          <input type="text" name="guest_code" id="guest-code-input" class="form-control"
-                 placeholder="e.g. GST-1A2B3C" autocomplete="off" autocapitalize="characters"
-                 spellcheck="false" required style="text-transform: uppercase;">
-        </div>
-        <button type="submit" class="btn btn-secondary" style="width: 100%; padding: 0.8rem; font-size: 1rem;">
-          Guest Sign-In &rarr;
-        </button>
-      </form>
-      <p style="color: var(--text-dim); font-size: 0.78rem; margin-top: 0.75rem;">
-        Day passes expire at midnight. All purchases &amp; facility usage are credited to the hosting member's rewards.
-      </p>
-    </div>
-
-    <div style="margin-top: 1.5rem; text-align: left; border-top: 4px solid var(--ink); padding-top: 1.25rem;">
-      <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 0.75rem;">
-        Member accounts are provisioned exclusively by club managers.
-      </p>
-      <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 0.75rem; font-size: 0.8rem; color: var(--ink);">
-        <strong style="text-transform: uppercase; letter-spacing: 0.06em;">Demo Accounts:</strong><br>
-        Member: <code>alice</code> / <code>password123</code><br>
-        Admin: <code>admin</code> / <code>admin123</code><br>
-        Guest: pass code created by a member
-      </div>
-    </div>
   </div>
 </div>
 {% endblock %}

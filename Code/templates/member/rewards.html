@@ -15,7 +15,38 @@
     <h2 style="font-size: 2rem; margin-bottom: 0.25rem;">{{ "%.0f"|format(rewards.discount_percentage) }}% Discount</h2>
     <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">Engagement Score: <strong>{{ "%.1f"|format(rewards.engagement_score) }} points</strong></p>
 
-    <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; margin-bottom: 1.5rem;">
+    <!-- Full points breakdown: every club data source that feeds the score -->
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; margin-bottom: 1.5rem; font-size: 0.85rem;">
+      <span style="color: var(--text-dim); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;">How your score is calculated</span>
+      <div style="margin-top: 0.65rem; display: grid; gap: 0.4rem;">
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">{{ rewards.details.visit_count }} visits &times; visit weight</span>
+          <strong style="color: var(--ink);">+{{ "%.1f"|format(rewards.details.visit_points) }} pts</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">${{ "%.2f"|format(rewards.details.total_spending) }} total spending (direct + guests)</span>
+          <strong style="color: var(--ink);">+{{ "%.1f"|format(rewards.details.spending_points) }} pts</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">{{ rewards.details.guest_referrals }} guest referral(s)</span>
+          <strong style="color: var(--ink);">+{{ "%.1f"|format(rewards.details.referral_points) }} pts</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">{{ rewards.details.facility_minutes }} facility minutes</span>
+          <strong style="color: var(--ink);">+{{ "%.1f"|format(rewards.details.facility_points) }} pts</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">{{ rewards.details.loyalty_months }} months of membership</span>
+          <strong style="color: var(--ink);">+{{ "%.1f"|format(rewards.details.loyalty_points) }} pts</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-top: 2px solid var(--border-glass); padding-top: 0.4rem;">
+          <span style="color: var(--text-muted);">Base score &times; {{ rewards.details.tier_multiplier }} ({{ rewards.details.membership_type }} tier)</span>
+          <strong style="color: var(--ink);">= {{ "%.1f"|format(rewards.engagement_score) }} pts</strong>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; margin-bottom: 1.5rem;">
       <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
         <span style="color: var(--text-muted);">Earned Profit Share:</span>
         <strong style="color: var(--ink); font-size: 1.1rem;">${{ "%.2f"|format(rewards.earned_profit_share) }}</strong>
@@ -35,12 +66,12 @@
 
   <!-- Redemption QR Code Mobile Display Container -->
   <div class="card card-yellow" style="text-align: center;">
-    <h3 style="color: var(--ink);">Mobile Redemption QR Code</h3>
-    <p style="color: var(--ink); font-size: 0.85rem; margin-top: 0.25rem; opacity: 0.85;">Scan this QR code at checkout to apply your {{ "%.0f"|format(rewards.discount_percentage) }}% discount during transactions.</p>
+    <h3 style="color: var(--on-tertiary);">Mobile Redemption QR Code</h3>
+    <p style="color: var(--on-tertiary); font-size: 0.85rem; margin-top: 0.25rem; opacity: 0.85;">Scan this QR code at checkout to apply your {{ "%.0f"|format(rewards.discount_percentage) }}% discount during transactions.</p>
 
-    <div style="background: #ffffff; border: 4px solid var(--ink); padding: 1.5rem; display: inline-block; margin-top: 1rem; box-shadow: 4px 4px 0 0 var(--ink);">
+    <div style="background: #ffffff; border: 4px solid var(--border-glass); padding: 1.5rem; display: inline-block; margin-top: 1rem; box-shadow: 4px 4px 0 0 var(--shadow-color);">
       <div id="redemption-qr" data-qr="{{ rewards.redemption_code }}"></div>
-      <div style="margin-top: 0.5rem; color: var(--ink); font-family: 'Outfit', monospace; font-weight: 900; font-size: 0.9rem; letter-spacing: 0.06em;">
+      <div style="margin-top: 0.5rem; color: #121212; font-family: 'Outfit', monospace; font-weight: 900; font-size: 0.9rem; letter-spacing: 0.06em;">
         {{ rewards.redemption_code }}
       </div>
     </div>
@@ -52,29 +83,35 @@
   <h3>Dynamic Engagement & Discount Scale</h3>
   <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">Higher engagement unlocks higher rewards without administrator intervention.</p>
 
-  <div class="grid grid-cols-4" style="gap: 1rem;">
-    <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--ink);">
-      <strong style="color: var(--text-muted);">0 - 49 Points</strong>
+  <div class="grid grid-cols-5" style="gap: 1rem;">
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--border-glass);">
+      <strong style="color: var(--text-muted);">0 - 99 Points</strong>
       <h4 style="font-size: 1.3rem;">0% Discount</h4>
       <span style="font-size: 0.8rem; color: var(--text-dim);">Entry Level</span>
     </div>
 
-    <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--primary);">
-      <strong style="color: var(--primary);">50 - 99 Points</strong>
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--primary);">
+      <strong style="color: var(--primary);">100 - 249 Points</strong>
       <h4 style="font-size: 1.3rem;">5% Discount</h4>
       <span style="font-size: 0.8rem; color: var(--text-dim);">Bronze Level</span>
     </div>
 
-    <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--secondary);">
-      <strong style="color: var(--secondary);">100 - 199 Points</strong>
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--secondary);">
+      <strong style="color: var(--secondary);">250 - 499 Points</strong>
       <h4 style="font-size: 1.3rem;">10% Discount</h4>
       <span style="font-size: 0.8rem; color: var(--text-dim);">Silver Level</span>
     </div>
 
-    <div style="background: var(--tertiary-soft); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--tertiary);">
-      <strong style="color: var(--ink);">200+ Points</strong>
-      <h4 style="font-size: 1.3rem;">15% - 20% Discount</h4>
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--tertiary);">
+      <strong style="color: var(--ink);">500 - 899 Points</strong>
+      <h4 style="font-size: 1.3rem;">15% Discount</h4>
       <span style="font-size: 0.8rem; color: var(--text-dim);">Gold Level</span>
+    </div>
+
+    <div style="background: var(--tertiary-soft); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--primary);">
+      <strong style="color: var(--ink);">900+ Points</strong>
+      <h4 style="font-size: 1.3rem;">20% Discount</h4>
+      <span style="font-size: 0.8rem; color: var(--text-dim);">Platinum Level</span>
     </div>
   </div>
 </div>

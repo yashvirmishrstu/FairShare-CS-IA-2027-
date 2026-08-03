@@ -16,14 +16,19 @@ class RewardSettings:
         return settings
 
     @staticmethod
-    def update_settings(visit_weight, spending_weight, referral_weight, profit_sharing_pool):
+    def update_settings(visit_weight, spending_weight, referral_weight, facility_weight,
+                        loyalty_weight, profit_sharing_pool, premium_multiplier=1.15, vip_multiplier=1.30):
         """Update algorithm weights and profit pool settings."""
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO reward_settings (visit_weight, spending_weight, referral_weight, profit_sharing_pool)
-            VALUES (?, ?, ?, ?)
-        ''', (visit_weight, spending_weight, referral_weight, profit_sharing_pool))
+            INSERT INTO reward_settings (
+                visit_weight, spending_weight, referral_weight, facility_weight,
+                loyalty_weight, premium_multiplier, vip_multiplier, profit_sharing_pool
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (visit_weight, spending_weight, referral_weight, facility_weight,
+              loyalty_weight, premium_multiplier, vip_multiplier, profit_sharing_pool))
         conn.commit()
         conn.close()
 
@@ -32,16 +37,24 @@ class EngagementEngine:
     @staticmethod
     def calculate_engagement_score(member_id):
         """
-        Calculate a member's total engagement score based on configurable factors:
-        - Member direct visits
-        - Member direct spending
-        - Guest referrals count
-        - Guest spending attached to member
+        Calculate a member's total engagement score based on configurable factors.
+        Uses ALL available club data sources:
+        - Member direct visits (activities 'visit')
+        - Member direct spending (activities 'purchase')
+        - Guest referrals count (activities 'referral' guest_count)
+        - Guest spending attached to member (guest_activities joined by host)
+        - Facility usage minutes (facility_checkins duration, member + guest)
+        - Membership loyalty (months since join_date)
+        - Membership tier multiplier (Member / Premium / VIP)
         """
         settings = RewardSettings.get_settings()
         v_weight = settings['visit_weight']
         s_weight = settings['spending_weight']
         r_weight = settings['referral_weight']
+        f_weight = settings['facility_weight']
+        l_weight = settings['loyalty_weight']
+        premium_mult = settings['premium_multiplier']
+        vip_mult = settings['vip_multiplier']
 
         conn = get_db()
         cursor = conn.cursor()
@@ -67,30 +80,84 @@ class EngagementEngine:
         ''', (member_id,))
         guest_spending = cursor.fetchone()[0]
 
+        # Calculate facility usage minutes (completed member + guest sessions)
+        cursor.execute('''
+            SELECT COALESCE(SUM(duration_minutes), 0)
+            FROM facility_checkins
+            WHERE member_id = ? AND status = 'completed'
+        ''', (member_id,))
+        facility_minutes = cursor.fetchone()[0]
+
+        # Calculate membership loyalty: months since the member joined
+        cursor.execute("SELECT membership_type, join_date FROM members WHERE id = ?", (member_id,))
+        member_row = cursor.fetchone()
+
         conn.close()
 
+        # Normalize membership tier so 'premium', 'Premium ', 'VIP' all resolve
+        membership_type = (member_row['membership_type'] or 'Member').strip().title() if member_row else 'Member'
+        # Loyalty: full elapsed months, floored on days (e.g. 45 days = 1 month)
+        loyalty_months = 0
+        if member_row and member_row['join_date']:
+            try:
+                join_dt = datetime.strptime(member_row['join_date'][:10], "%Y-%m-%d")
+                today = datetime.now()
+                loyalty_months = max(0, (today - join_dt).days // 30)
+            except ValueError:
+                loyalty_months = 0
+
         total_spending = direct_spending + guest_spending
-        score = (visit_count * v_weight) + (total_spending * s_weight) + (direct_referrals * r_weight)
-        
+
+        # Score each data source independently
+        visit_points = visit_count * v_weight
+        spending_points = total_spending * s_weight
+        referral_points = direct_referrals * r_weight
+        facility_points = facility_minutes * f_weight
+        loyalty_points = loyalty_months * l_weight
+
+        base_score = visit_points + spending_points + referral_points + facility_points + loyalty_points
+
+        # Membership tier multiplier (Premium / VIP get a boost on their base score)
+        if membership_type == 'Vip':
+            tier_multiplier = vip_mult
+        elif membership_type == 'Premium':
+            tier_multiplier = premium_mult
+        else:
+            tier_multiplier = 1.0
+
+        score = base_score * tier_multiplier
+
         return {
             'visit_count': visit_count,
+            'visit_points': round(visit_points, 2),
             'direct_spending': direct_spending,
             'guest_spending': guest_spending,
             'total_spending': total_spending,
+            'spending_points': round(spending_points, 2),
             'guest_referrals': direct_referrals,
+            'referral_points': round(referral_points, 2),
+            'facility_minutes': facility_minutes,
+            'facility_points': round(facility_points, 2),
+            'loyalty_months': loyalty_months,
+            'loyalty_points': round(loyalty_points, 2),
+            'membership_type': membership_type,
+            'tier_multiplier': tier_multiplier,
+            'base_score': round(base_score, 2),
             'engagement_score': round(score, 2)
         }
 
     @staticmethod
     def calculate_discount_band(score):
-        """Map engagement score to personalized discount percentage band."""
-        if score >= 350:
+        """Map engagement score to personalized discount percentage band.
+        Thresholds are scaled to the full scoring model (visits, spending,
+        referrals, facility minutes, loyalty, tier multiplier)."""
+        if score >= 900:
             return 20.0
-        elif score >= 200:
+        elif score >= 500:
             return 15.0
-        elif score >= 100:
+        elif score >= 250:
             return 10.0
-        elif score >= 50:
+        elif score >= 100:
             return 5.0
         return 0.0
 

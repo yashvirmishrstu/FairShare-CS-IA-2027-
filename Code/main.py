@@ -828,16 +828,21 @@ def admin_settings():
             visit_w = float(request.form.get('visit_weight', 10.0))
             spend_w = float(request.form.get('spending_weight', 0.5))
             referral_w = float(request.form.get('referral_weight', 50.0))
+            facility_w = float(request.form.get('facility_weight', 0.2))
+            loyalty_w = float(request.form.get('loyalty_weight', 5.0))
             profit_pool = float(request.form.get('profit_sharing_pool', 10000.0))
+            premium_mult = float(request.form.get('premium_multiplier', 1.15))
+            vip_mult = float(request.form.get('vip_multiplier', 1.30))
         except ValueError:
             flash('Invalid numeric inputs for algorithm settings.', 'danger')
             return redirect(url_for('admin_settings'))
 
-        if visit_w < 0 or spend_w < 0 or referral_w < 0 or profit_pool < 0:
+        if visit_w < 0 or spend_w < 0 or referral_w < 0 or facility_w < 0 or loyalty_w < 0 or profit_pool < 0 or premium_mult < 0 or vip_mult < 0:
             flash('Algorithm parameters and profit pool cannot be negative.', 'danger')
             return redirect(url_for('admin_settings'))
 
-        RewardSettings.update_settings(visit_w, spend_w, referral_w, profit_pool)
+        RewardSettings.update_settings(visit_w, spend_w, referral_w, facility_w,
+                                       loyalty_w, profit_pool, premium_mult, vip_mult)
         flash('Algorithm parameters & profit-sharing pool updated successfully!', 'success')
         return redirect(url_for('admin_settings'))
 

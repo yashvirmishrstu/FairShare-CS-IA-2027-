@@ -67,19 +67,31 @@
     <a href="{{ url_for('admin_settings') }}" class="u-link" style="font-size: 0.9rem;">Modify Parameters &rarr;</a>
   </div>
   <div class="grid grid-cols-4" style="gap: 1rem;">
-    <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--primary);">
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--primary);">
       <span style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;">Visit Weight</span>
       <h4 style="font-size: 1.3rem; margin-top: 0.2rem;">{{ settings.visit_weight }} pts / visit</h4>
     </div>
-    <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--secondary);">
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--secondary);">
       <span style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;">Spending Weight</span>
       <h4 style="font-size: 1.3rem; margin-top: 0.2rem;">{{ settings.spending_weight }} pts / $1.00</h4>
     </div>
-    <div style="background: var(--surface-dim); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--tertiary);">
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--tertiary);">
       <span style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;">Referral Weight</span>
       <h4 style="font-size: 1.3rem; margin-top: 0.2rem;">{{ settings.referral_weight }} pts / guest</h4>
     </div>
-    <div style="background: var(--tertiary-soft); border: 3px solid var(--ink); padding: 1rem; border-top: 8px solid var(--ink);">
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--primary);">
+      <span style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;">Facility Weight</span>
+      <h4 style="font-size: 1.3rem; margin-top: 0.2rem;">{{ settings.facility_weight }} pts / min</h4>
+    </div>
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--secondary);">
+      <span style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;">Loyalty Weight</span>
+      <h4 style="font-size: 1.3rem; margin-top: 0.2rem;">{{ settings.loyalty_weight }} pts / month</h4>
+    </div>
+    <div style="background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--tertiary);">
+      <span style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;">Tier Multipliers</span>
+      <h4 style="font-size: 1.1rem; margin-top: 0.2rem;">Premium &times;{{ settings.premium_multiplier }} · VIP &times;{{ settings.vip_multiplier }}</h4>
+    </div>
+    <div style="background: var(--tertiary-soft); border: 3px solid var(--border-glass); padding: 1rem; border-top: 8px solid var(--border-glass);">
       <span style="color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;">Profit Sharing Pool</span>
       <h4 style="font-size: 1.3rem; margin-top: 0.2rem; color: var(--ink);">${{ "%.2f"|format(settings.profit_sharing_pool) }}</h4>
     </div>

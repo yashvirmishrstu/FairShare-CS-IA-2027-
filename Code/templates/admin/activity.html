@@ -4,8 +4,16 @@
 
 {% block content %}
 <div style="margin-bottom: 2rem;">
-  <h1>Master System Activity Ledger</h1>
-  <p style="color: var(--text-muted);">View all member activity entries or manually log visits/purchases on behalf of members.</p>
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <h1>Master System Activity Ledger</h1>
+      <p style="color: var(--text-muted);">View all member activity entries or manually log visits/purchases on behalf of members.</p>
+    </div>
+    <div style="display: flex; gap: 0.6rem; flex-shrink: 0;">
+      <a href="{{ url_for('admin_settings') }}" class="btn btn-ghost btn-sm">Algorithm Settings</a>
+      <a href="{{ url_for('admin_reports') }}" class="btn btn-ghost btn-sm">CSV Reports</a>
+    </div>
+  </div>
 </div>
 
 <!-- QR Expense Receipt Management -->
@@ -34,7 +42,7 @@
     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 1rem;">Each receipt carries a QR code. Once scanned, it cannot be logged again.</p>
     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem;">
       {% for r in receipts %}
-        <div style="border: 3px solid var(--ink); padding: 0.9rem; background: var(--surface-hi); display: flex; align-items: center; gap: 0.9rem;">
+        <div style="border: 3px solid var(--border-glass); padding: 0.9rem; background: var(--surface-hi); display: flex; align-items: center; gap: 0.9rem;">
           <div style="flex-shrink: 0;"><div data-qr="{{ r.receipt_code }}" data-qr-width="72"></div></div>
           <div style="flex: 1; min-width: 0;">
             <p style="font-weight: 800; text-transform: uppercase; font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.service_name }}</p>
