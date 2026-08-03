@@ -1,3 +1,11 @@
+{# ==============================================================================
+   IB HL CS: AUTHENTICATION INTERFACE (client side of the login protocol)
+   ==============================================================================
+   Collects username + password and POSTs them to /login, where the server
+   verifies the password HASH and starts a signed session. The guest tab
+   handles day-pass sign-in via guest code. Client-side `required` attributes
+   give instant feedback; the server re-validates everything.
+   ============================================================================== #}
 {% extends "base.html" %}
 
 {% block title %}Log In - FairShare System{% endblock %}

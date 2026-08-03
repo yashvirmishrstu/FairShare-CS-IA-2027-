@@ -1,7 +1,19 @@
+{# ==============================================================================
+   IB HL CS: TEMPLATE INHERITANCE (server-side rendering)
+   ==============================================================================
+   base.html is the master layout. Every page template `{% extends %}` this
+   file and overrides named `{% block %}` sections (title, content). This is
+   the *DRY principle* applied to HTML: navigation, footer, flash messages
+   and the JS/CSS assets are written once and reused by every page.
+   The {% block %} mechanism is analogous to method overriding in OOP —
+   child templates specialise the parent layout.
+   ============================================================================== #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Responsive design: viewport meta tells mobile browsers to scale the
+       layout to device width (success criterion: responsive UI). -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}FairShare - Personalized Club Rewards & Points Marketplace{% endblock %}</title>
 

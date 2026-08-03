@@ -1,3 +1,13 @@
+{# ==============================================================================
+   IB HL CS: PRESENTING ALGORITHM OUTPUT
+   ==============================================================================
+   Shows the engagement engine's output (rewards dict) and makes the scoring
+   model transparent: every data source (visits, spending, referrals,
+   facility minutes, loyalty, tier multiplier) is displayed as a line in the
+   breakdown — this is algorithm transparency / explainability, important
+   for the ethics & fairness discussion of the IA. The redemption QR code
+   element (data-qr) is rendered by app.js.
+   ============================================================================== #}
 {% extends "base.html" %}
 
 {% block title %}My Rewards & QR Voucher - FairShare{% endblock %}

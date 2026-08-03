@@ -1,3 +1,11 @@
+{# ==============================================================================
+   IB HL CS: DATA VISUALISATION FOR DECISION-MAKING
+   ==============================================================================
+   The admin dashboard aggregates club-wide metrics (members, revenue,
+   facility minutes, reward pool) and renders three Chart.js canvases fed by
+   the /admin/api/analytics JSON endpoint. Visualising aggregated data is a
+   core *data processing* skill: raw rows -> GROUP BY summaries -> charts.
+   ============================================================================== #}
 {% extends "base.html" %}
 
 {% block title %}Admin Dashboard & Analytics - FairShare{% endblock %}

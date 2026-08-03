@@ -1,3 +1,12 @@
+{# ==============================================================================
+   IB HL CS: VIEW LAYER / SERVER-SIDE RENDERING
+   ==============================================================================
+   This template renders the member's dashboard. Flask passes a view-model
+   (member, rewards, points_history, ...) built in main.py; Jinja2
+   interpolates those values into HTML with {{ }} and controls flow with
+   {% if %}/{% for %}. Separating presentation (this file) from logic
+   (main.py + models.py) is the MVC pattern's separation of concerns.
+   ============================================================================== #}
 {% extends "base.html" %}
 
 {% block title %}Member Dashboard - {{ member.full_name }}{% endblock %}

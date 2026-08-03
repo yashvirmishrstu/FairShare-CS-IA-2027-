@@ -1,5 +1,27 @@
 /**
  * FairShare Client-Side Interactive Engine & Visual Analytics
+ *
+ * ============================================================================
+ * IB HL CS: EVENT-DRIVEN & FUNCTIONAL JAVASCRIPT
+ * ============================================================================
+ * This file is the client-side counterpart to the Flask server. It turns
+ * static HTML pages into an interactive application:
+ *
+ *  * DOM (Document Object Model) manipulation — JavaScript reads and
+ *    modifies the page's element tree in response to user actions.
+ *  * Event-driven programming — the code registers *event listeners*
+ *    (click, submit, beforeunload) and reacts when those events fire.
+ *  * Callbacks & closures — functions passed to addEventListener capture
+ *    variables from their enclosing scope (a closure), e.g. the `scanner`
+ *    state in initReceiptScanner.
+ *  * Asynchronous programming — fetch() returns a Promise; .then() chains
+ *    register callbacks that run when the network response arrives, so the
+ *    page never blocks while waiting (non-blocking I/O).
+ *  * Client-side validation — a first line of defence for instant feedback
+ *    (the server remains the authoritative validator).
+ *
+ * All entry points are wired up once the DOM has finished loading
+ * (DOMContentLoaded event) so elements exist before listeners attach.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,6 +39,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Mobile navigation hamburger toggle
+// IB HL CS: responsive design — a conditional UI that adapts to screen size.
+// The hamburger toggles a CSS class (`open`) that reveals/hides the nav on
+// small screens; aria-expanded is updated for screen-reader accessibility.
 function initMobileNav() {
   const toggle = document.getElementById('nav-toggle');
   const links = document.getElementById('nav-links');
@@ -60,6 +85,13 @@ function initAuthTabs() {
 }
 
 // Client-side form validation
+// IB HL CS: this is the FIRST layer of a layered validation strategy
+// (client -> server -> database constraints). It gives instant feedback
+// before a network round-trip: number inputs tagged data-non-negative must
+// not be negative, and password confirmation must match. querySelectorAll
+// + forEach is a functional iteration over a NodeList. NOTE: client-side
+// checks are cosmetic — the server re-validates everything (never trust
+// the client).
 function initClientValidation() {
   const forms = document.querySelectorAll('form');
   forms.forEach(form => {
@@ -92,6 +124,13 @@ function initClientValidation() {
 }
 
 // Render all Barcode & QR elements (facility barcodes, redemption QR)
+// IB HL CS: data encoding & symbology — barcodes (CODE128, linear 1D) and
+// QR codes (2D matrix with error correction level H) encode machine-readable
+// identifiers. The server renders <svg>/<div> placeholders carrying a
+// data-barcode / data-qr attribute; this function *declaratively* scans the
+// DOM for those attributes and delegates rendering to the JsBarcode/QRCode
+// libraries. This is a data-driven approach: adding a new element to any
+// template automatically gets rendered without more JS.
 function initBarcodeAndQRCodes() {
   if (typeof JsBarcode === 'function') {
     document.querySelectorAll('[data-barcode]').forEach(elem => {
@@ -127,6 +166,11 @@ function initBarcodeAndQRCodes() {
 }
 
 // Facility Barcode Scanner interactions (member/scan page)
+// IB HL CS: state management & race-condition defence — the form dataset
+// flag `submitting` is a *state variable* guarding against double-submits
+// (rapid scanner triggers). Timers (setTimeout) reset the flag as a safety
+// net in case navigation stalls. The scanner keeps focus for rapid
+// successive scans (usability = HCI concept).
 function initFacilityScanner() {
   const form = document.getElementById('scanner-form');
   const input = document.getElementById('scanner-input');
@@ -180,6 +224,11 @@ function submitFacilityScan(code) {
 }
 
 // Live elapsed timers for active facility sessions (one or many)
+// IB HL CS: real-time processing with setInterval — a callback fires every
+// 1000 ms and recomputes elapsed time from the server-provided start
+// timestamp. Date parsing, integer division and modulo (Math.floor,
+// % 3600, % 60) decompose seconds into hours:minutes:seconds — a classic
+// base-60 (sexagesimal) conversion algorithm.
 function initSessionTimer() {
   const timers = document.querySelectorAll('.session-timer[data-start]');
   if (!timers.length) return;
@@ -479,6 +528,13 @@ function playScanBeep(freq = 880, dur = 0.12) {
 }
 
 // Fetch and render Admin Chart.js Visualizations
+// IB HL CS: client-server data exchange + data visualisation. fetch() makes
+// an asynchronous GET request to /admin/api/analytics (a REST-style JSON
+// endpoint). The response Promise resolves to JSON, which is mapped into
+// chart-ready arrays (.map — functional transformation) and rendered as
+// bar / line / doughnut charts. This satisfies the analytics success
+// criterion and demonstrates abstraction: raw SQL rows become meaningful
+// visual summaries.
 function initAdminAnalytics() {
   const peakChartElem = document.getElementById('peakHoursChart');
   const facilityChartElem = document.getElementById('facilityUsageChart');
@@ -578,6 +634,10 @@ function initAdminAnalytics() {
 // check-ins and check-outs during a facility scanning session.  Persists
 // via sessionStorage so the total survives page reloads (each scan POST
 // redirects back to the same page).  Auto-resets when leaving the scanner.
+// IB HL CS: *persistent client-side state* — sessionStorage (a key-value
+// store scoped to the browser tab) survives page reloads but not tab
+// closes. Regex (regular expressions) extract the point values from flash
+// message text — pattern matching / parsing a string, a core CS skill.
 function initSessionPointsCounter() {
   const badge = document.getElementById('session-points-badge');
   const valueEl = document.getElementById('session-points-value');

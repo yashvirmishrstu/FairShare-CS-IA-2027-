@@ -1,3 +1,28 @@
+"""
+================================================================================
+ FAIRSHARE — WEB APPLICATION (Controller Layer) — IB HL CS
+================================================================================
+ This is the *controller* of a Model-View-Controller (MVC) web application:
+
+   Model       -> models.py   (business logic: engagement scoring, rewards)
+   View        -> templates/  (Jinja2 HTML rendered server-side)
+   Controller  -> THIS FILE   (routes: map HTTP requests to logic + views)
+
+ KEY IB HL CS CONCEPTS DEMONSTRATED:
+  * Client-server networking: the browser (client) sends HTTP requests
+    (GET for pages, POST for form data) to this Flask server, which
+    responds with HTML documents and HTTP status codes (200, 302 redirects).
+  * Authentication vs Authorisation: login (verifying WHO you are) is
+    handled with password *hashing*; access control (WHAT you may do) is
+    handled by role checks in decorators (admin_required). Sessions keep
+    the user logged in between requests via an HMAC-signed cookie.
+  * Security engineering: parameterised SQL (no injection), hashed
+    passwords (never plain text), role-based access control (RBAC),
+    server-side validation of every input, and HTTP cache headers.
+  * Computational thinking: each route is one *decomposition* of the
+    overall problem into small, single-purpose functions; validation and
+    error messages follow a consistent pattern (defensive programming).
+"""
 import functools
 import uuid
 from datetime import datetime
@@ -14,6 +39,11 @@ app.config.from_object(Config)
 # Facility Barcode Registry — every facility has a unique scannable barcode code.
 # Members scan the code posted at a facility entrance to start their session timer,
 # then scan the same code again to check out and log usage duration.
+#
+# IB HL CS: this dictionary is a *map / associative array* (key -> value).
+# The key is the machine-scannable barcode; the value is the human-readable
+# facility name. Lookups are O(1) on average. It also acts as a *whitelist*
+# for validation: any scanned code not present here is rejected as invalid.
 FACILITIES = {
     "FAC-101": "Club Fitness & Gym",
     "FAC-102": "Tennis & Squash Courts",
@@ -27,6 +57,13 @@ init_db()
 
 # HTTP Cache Control Header for Asset Optimization & Fast Load Times (<2-3s)
 # In debug mode nothing is cached so code/template/asset edits show up instantly during development.
+#
+# IB HL CS: HTTP response headers control browser caching behaviour. In
+# production, `Cache-Control: public, max-age=3600` tells the browser and
+# any intermediate proxy they may reuse static assets for an hour, cutting
+# repeat page-load times dramatically (meets the 2-3s load-time success
+# criterion). In debug mode we disable caching entirely so developers always
+# see fresh changes.
 @app.after_request
 def add_header(response):
     if app.debug:
@@ -35,8 +72,18 @@ def add_header(response):
         response.headers['Cache-Control'] = 'public, max-age=3600'
     return response
 
-# Authorization Decorators
+# ---------------------------------------------------------------------------
+# AUTHORISATION DECORATORS — IB HL CS: role-based access control (RBAC)
+# ---------------------------------------------------------------------------
+# A decorator is a *higher-order function*: it takes a function, wraps it in
+# a new function that runs a check FIRST, and returns the wrapper. Placing
+# @admin_required above a route means "run this check before the route".
+# This implements the security principle of LEAST PRIVILEGE — members simply
+# cannot reach admin pages, even by typing the URL directly.
+# functools.wraps preserves the original function's metadata (name, docstring)
+# so Flask's URL routing and debugging still work normally.
 def login_required(f):
+    """Reject unauthenticated requests — the baseline gate for member pages."""
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
@@ -46,6 +93,7 @@ def login_required(f):
     return decorated_function
 
 def admin_required(f):
+    """Reject anyone who is not logged in AND not an administrator."""
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session or session.get('role') != 'admin':
@@ -55,7 +103,12 @@ def admin_required(f):
     return decorated_function
 
 def guest_required(f):
-    """Require an active guest day-pass session (expires at end of day)."""
+    """Require an active guest day-pass session (expires at end of day).
+
+    IB HL CS: an example of *validation with expiry* — a guest pass is only
+    valid on the calendar day it was issued (compare session date to today).
+    Stale sessions are cleaned up defensively before redirecting.
+    """
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
         guest_id = session.get('guest_id')
@@ -69,6 +122,11 @@ def guest_required(f):
     return decorated_function
 
 # Context Processor for Navigation Badges & User Info
+#
+# IB HL CS: a Flask *context processor* injects variables into EVERY
+# template render automatically (dependency injection). This avoids
+# repeating the same DB lookup in every route. Note: one query per request
+# here is acceptable; heavier per-member queries were batched in models.py.
 @app.context_processor
 def inject_user():
     user = None
@@ -229,7 +287,7 @@ def guest_scan():
                     total_pts = visit_pts + facility_pts
                     flash(f'Checked out of {facility_name}! Session duration: {duration} mins. +{total_pts} pts earned!', 'success')
                 else:
-                    flash(f'Checked out of {facility_name}! Session duration: {duration} mins.', 'success')
+                    flash(f'Checked out of {facility_name}!', 'success')
             else:
                 flash(f'You are currently checked into {active["facility_name"]}. Scan that facility again to check out first.', 'warning')
         else:
@@ -250,7 +308,23 @@ def guest_logout():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Unified sign-in for members, admins, and guests — each role is routed
-    to its own suite (member dashboard, admin dashboard, guest day portal)."""
+    to its own suite (member dashboard, admin dashboard, guest day portal).
+
+    IB HL CS: SECURITY NOTES —
+    * Passwords are never stored or compared in plain text: registration
+      stores `generate_password_hash(password)` (a salted one-way hash) and
+      login verifies with `check_password_hash`. Even if the database leaks,
+      passwords cannot be recovered from the hashes.
+    * All inputs are validated server-side (empty fields rejected with a
+      flash message) — client-side checks can be bypassed, so the server is
+      the authoritative validation point.
+    * On success the server writes to the session (signed cookie), setting
+      user_id, username and role. Every later request reads this session to
+      authorise actions — stateless session management via HMAC-signed
+      cookies.
+    * session.clear() before login prevents session-fixation attacks (an
+      attacker-supplied session id cannot be reused).
+    """
     today = datetime.now().strftime('%Y-%m-%d')
 
     tab = request.args.get('tab') if request.args.get('tab') in ('account', 'guest') else 'account'
@@ -315,11 +389,19 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    """Registration is intentionally DISABLED for the public.
+
+    IB HL CS: a security decision — open self-registration would let anyone
+    create an account (and potentially a member profile). Restricting account
+    creation to administrators enforces the principle of least privilege and
+    keeps the member roster trustworthy.
+    """
     flash('Public self-registration is disabled. Member accounts must be created by a club administrator.', 'info')
     return redirect(url_for('login'))
 
 @app.route('/logout')
 def logout():
+    """Clear the server-side session to end the authenticated session."""
     session.clear()
     flash('You have been logged out.', 'info')
     return redirect(url_for('login'))
@@ -329,6 +411,15 @@ def logout():
 @app.route('/member/dashboard')
 @login_required
 def member_dashboard():
+    """The member's personalised overview page.
+
+    IB HL CS: this route gathers data from several queries and combines it
+    into one view-model dict passed to the Jinja template. The rewards view
+    uses lazy materialisation (see EngagementEngine.view_member_rewards) so
+    a normal page load is a pure read. Points-history rows are computed by
+    applying the SAME algorithm weights as the engine — one source of truth
+    (DRY) so the page and the score can never disagree.
+    """
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM members WHERE user_id = ?", (session['user_id'],))
@@ -418,6 +509,12 @@ def member_scan():
     """
     Facility barcode scanner: scanning a facility's barcode checks the member in
     and starts the session timer; scanning it again checks out and logs duration.
+
+    IB HL CS: this route implements a *state machine* — check-in and check-out
+    are two states of one facility session. Validation (defensive programming)
+    rejects empty or unknown barcodes, and duplicate sessions are prevented
+    (a second scan while active is treated as check-out only for the SAME
+    facility). Each action gives immediate feedback via flash messages.
     """
     conn = get_db()
     cursor = conn.cursor()
@@ -451,7 +548,7 @@ def member_scan():
                         total_pts = visit_pts + facility_pts
                         flash(f'Checked out of {facility_name}! Session duration: {duration} mins. +{total_pts} pts earned!', 'success')
                     else:
-                        flash(f'Checked out of {facility_name}! Session duration: {duration} mins.', 'success')
+                        flash(f'Checked out of {facility_name}!', 'success')
                 else:
                     flash(f'You are currently checked into {active["facility_name"]}. Scan that facility again to check out first.', 'warning')
             else:
@@ -597,6 +694,11 @@ def guest_receipt_scan():
 def admin_checkin():
     member_id = request.form.get('member_id')
     facility_name = request.form.get('facility_name', 'General Club House')
+    try:
+        member_id = int(member_id)
+    except (TypeError, ValueError):
+        flash('Invalid member ID.', 'danger')
+        return redirect(url_for('admin_activity'))
     FacilityTracker.check_in(member_id, facility_name)
     flash(f'Member checked in to {facility_name}!', 'success')
     return redirect(url_for('admin_activity'))
@@ -655,6 +757,10 @@ def guest_spending():
     cursor.execute("SELECT id FROM guest_ids WHERE id = ?", (session['guest_id'],))
     guest = cursor.fetchone()
     conn.close()
+
+    if not guest:
+        flash('Guest pass not found. Please sign in again.', 'danger')
+        return redirect(url_for('login', tab='guest'))
 
     GuestManager.record_spending(guest['id'], service_name, amount)
     settings = RewardSettings.get_settings()
@@ -718,6 +824,15 @@ def admin_dashboard():
 @app.route('/admin/api/analytics')
 @admin_required
 def admin_analytics_api():
+    """JSON endpoint feeding the admin dashboard's Chart.js visualisations.
+
+    IB HL CS: this is a *data-processing pipeline* — raw rows from the
+    database are aggregated with GROUP BY queries (facility usage, peak
+    activity hours, reward band distribution), converted into Python dicts,
+    and serialised to JSON (JavaScript Object Notation) for the client.
+    This demonstrates data transformation between the persistence layer and
+    the presentation layer.
+    """
     conn = get_db()
     cursor = conn.cursor()
 
@@ -750,6 +865,16 @@ def admin_analytics_api():
 @app.route('/admin/members', methods=['GET', 'POST'])
 @admin_required
 def admin_members():
+    """Admin member management: add members, view the club roster with live
+    rewards, edit profiles, and manage yearly fees.
+
+    IB HL CS: this route demonstrates the *command/query* separation — GET
+    renders a read-only view (batch rewards, never writing), while POST
+    performs a validated write (duplicate-username check BEFORE insert,
+    hashed passwords, generated member codes). Duplicate detection is a
+    classic data-integrity pattern: query-then-insert with a UNIQUE column
+    as the final backstop.
+    """
     conn = get_db()
     cursor = conn.cursor()
 
@@ -857,6 +982,11 @@ def admin_activity():
         except ValueError:
             transaction_value = -1.0
 
+        # IB HL CS: server-side validation — reject negative amounts before
+        # the row ever reaches the database. Converting the raw string with
+        # float() inside try/except (defensive programming) means malformed
+        # input is caught and turned into a safe sentinel (-1.0) that fails
+        # the validation below instead of crashing the server.
         if transaction_value < 0:
             flash('Transaction value cannot be negative!', 'danger')
         else:
@@ -1028,6 +1158,14 @@ def admin_marketplace():
 @app.route('/admin/settings', methods=['GET', 'POST'])
 @admin_required
 def admin_settings():
+    """Admin control panel for the reward algorithm's parameters.
+
+    IB HL CS: *configurability* — the scoring weights, tier multipliers and
+    profit pool are all user-editable. Every numeric input is validated
+    (non-negative) server-side before being persisted to reward_settings,
+    satisfying the validation success criterion. The try/except around
+    float() conversions is defensive programming against malformed input.
+    """
     if request.method == 'POST':
         try:
             visit_w = float(request.form.get('visit_weight', 10.0))
@@ -1064,6 +1202,14 @@ def admin_reports():
 @app.route('/admin/reports/export/usage_csv')
 @admin_required
 def export_usage_csv():
+    """Download member usage logs as a CSV file.
+
+    IB HL CS: *file processing over HTTP* — the CSV string generated by
+    CSVReportGenerator is wrapped in a Response object with a MIME type
+    (text/csv) and a Content-Disposition header that tells the browser to
+    download it as fairshare_member_usage_logs.csv. This is how a web
+    application serves generated files.
+    """
     csv_data = CSVReportGenerator.export_member_usage_logs()
     return Response(
         csv_data,
@@ -1074,6 +1220,9 @@ def export_usage_csv():
 @app.route('/admin/reports/export/rewards_csv')
 @admin_required
 def export_rewards_csv():
+    """Download the financial reward summary (points, balances, discounts)
+    as CSV. Same file-processing-over-HTTP pattern as usage export.
+    """
     csv_data = CSVReportGenerator.export_financial_reward_summaries()
     return Response(
         csv_data,

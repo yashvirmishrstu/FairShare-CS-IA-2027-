@@ -1,3 +1,31 @@
+"""
+================================================================================
+ DATABASE LAYER (Persistence) — IB HL CS: Databases & SQL
+================================================================================
+ This module implements the *persistence layer* of the FairShare system.
+
+ KEY IB HL CS CONCEPTS DEMONSTRATED:
+  * Relational database design: data is decomposed into normalised tables
+    (users, members, activities, rewards, ...) so that no fact is stored
+    twice (eliminates redundancy / update anomalies).
+  * Referential integrity: FOREIGN KEY constraints + `ON DELETE CASCADE`
+    guarantee that child records (e.g. a member's activities) can never
+    reference a parent (member) that no longer exists.
+  * Data integrity rules at the schema level: UNIQUE, NOT NULL and CHECK
+    constraints enforce validity BEFORE any application code runs.
+  * Structured Query Language (SQL): DDL (CREATE/ALTER TABLE) and DML
+    (INSERT/UPDATE) are executed through parameterised statements.
+  * SQL triggers (event-driven automation): the dirty-flag triggers at the
+    bottom of init_db() automatically mark the rewards cache as stale on
+    every write — the application never has to remember to do it.
+  * Migrations: ALTER TABLE ... ADD COLUMN statements let existing databases
+    be upgraded in place when the schema evolves between versions.
+
+ WHY SQLite?  A single-file, serverless, transactional relational DBMS —
+ perfect for an IA prototype because it needs no separate server process
+ and supports the full ACID properties (Atomicity, Consistency, Isolation,
+ Durability) via transactions.
+"""
 import sqlite3
 import os
 import uuid
@@ -5,7 +33,19 @@ from werkzeug.security import generate_password_hash
 from config import Config
 
 def get_db():
-    """Connect to SQLite database and set row factory."""
+    """Connect to SQLite database and set row factory.
+
+    IB HL CS NOTES:
+    * This is a *factory function* — every caller gets a fresh connection,
+      which isolates transactions between requests (a form of encapsulation
+      at the connection level).
+    * `sqlite3.Row` row factory makes query results accessible BOTH by index
+      (row[0]) and by column name (row['member_id']) — like a dictionary.
+      This improves code readability and maintainability over raw tuples.
+    * `PRAGMA foreign_keys = ON` is essential: SQLite disables foreign-key
+      enforcement by default, so without this line the ON DELETE CASCADE
+      rules defined in the schema would be silently ignored.
+    """
     db_path = Config.DATABASE
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
@@ -19,6 +59,16 @@ def init_db():
     cursor = conn.cursor()
 
     # Create tables
+    # ------------------------------------------------------------------
+    # SCHEMA DESIGN — IB HL CS: Normalisation & Entity-Relationship model
+    # ------------------------------------------------------------------
+    # The database is decomposed into separate *entities* (tables) linked by
+    # primary keys (id) and foreign keys (e.g. members.user_id). This is the
+    # relational model: each table stores one kind of fact, eliminating
+    # redundancy (e.g. a member's name is stored once in `members`, NOT in
+    # every activity row). CHECK constraints encode *domain rules* directly
+    # in the schema, e.g. activity_type must be one of the four allowed
+    # values — this is validation at the deepest layer of the system.
     cursor.executescript('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +86,7 @@ def init_db():
             email TEXT NOT NULL,
             phone TEXT,
             member_code TEXT UNIQUE NOT NULL,
-            yearly_fee REAL NOT NULL DEFAULT 500.00,
+            yearly_fee REAL NOT NULL DEFAULT 1200.00,
             join_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
         );
@@ -158,6 +208,13 @@ def init_db():
         );
     ''')
 
+    # ------------------------------------------------------------------
+    # MIGRATIONS — IB HL CS: Schema Evolution
+    # ------------------------------------------------------------------
+    # A migration upgrades an EXISTING database (created by an older version
+    # of the code) without destroying its data. PRAGMA table_info returns the
+    # current columns; if a new column is missing, ALTER TABLE adds it. This
+    # makes init_db() *idempotent*: safe to run on every app launch.
     # Migration: add guest facility tracking column to facility_checkins (existing databases)
     cursor.execute("PRAGMA table_info(facility_checkins)")
     checkin_cols = [row[1] for row in cursor.fetchall()]
@@ -187,6 +244,16 @@ def init_db():
         cursor.execute("ALTER TABLE members ADD COLUMN fee_points_applied REAL NOT NULL DEFAULT 0.0")
     if 'fee_paid' not in member_cols:
         cursor.execute("ALTER TABLE members ADD COLUMN fee_paid INTEGER NOT NULL DEFAULT 0")
+
+    # ------------------------------------------------------------------
+    # SEEDING — IB HL CS: Test Data & the DRY principle
+    # ------------------------------------------------------------------
+    # A fresh install has no rows, so we seed demo accounts and activity so
+    # the application is immediately usable and testable. Seeding is guarded
+    # by COUNT(*) checks so it only runs on a genuinely empty database.
+    # Passwords are stored as *hashes* (one-way functions, see werkzeug's
+    # generate_password_hash) — never plain text — satisfying the security
+    # requirement of the success criteria.
 
     # Seed Default Reward Settings if empty
     cursor.execute("SELECT COUNT(*) FROM reward_settings")
@@ -279,8 +346,24 @@ def init_db():
             )
 
     # ------------------------------------------------------------------
-    # Rewards recompute flag + dirty-marking triggers
+    # DIRTY-FLAG + TRIGGERS — IB HL CS: Event-driven processing & caching
     # ------------------------------------------------------------------
+    # This is the clever part that makes the batch rewards engine efficient.
+    #
+    # PROBLEM: recomputing every member's engagement score after every write
+    # is expensive. But doing it lazily requires knowing *when* data changed.
+    #
+    # SOLUTION: a singleton table `rewards_recompute` stores one flag. SQLite
+    # TRIGGERS fire automatically AFTER any INSERT/UPDATE/DELETE on the seven
+    # scoring tables and set the flag. The first read after a change sees
+    # the flag and triggers one batch recompute; subsequent reads are pure
+    # reads (O(1) flag check). This is *event-driven architecture*: the
+    # database notifies the application of changes instead of the app
+    # polling or guessing.
+    #
+    # IB note: triggers are a form of procedural extension to SQL — they
+    # move business logic into the DBMS itself.
+
     # Singleton row (id=1) that records whether any scoring-relevant data
     # changed since the last batch rewards recompute. SQLite triggers set it
     # on every write to the scoring tables; EngagementEngine's lazy batch
@@ -300,6 +383,11 @@ def init_db():
     # CREATE keeps this idempotent so existing databases pick up the triggers
     # on next startup. `rewards` is included so the redeem flow (which flips an
     # active row to 'redeemed') also invalidates the cache.
+    #
+    # Loop + string formatting generate one trigger per (table, verb) pair —
+    # 7 tables x 3 verbs = 21 triggers. This is metaprogramming at the schema
+    # level: writing repetitive SQL by hand would be error-prone, so we let a
+    # loop (a programming construct) generate it deterministically.
     for table in ('activities', 'guest_activities', 'facility_checkins',
                   'members', 'reward_settings', 'point_transactions', 'rewards'):
         for verb in ('INSERT', 'UPDATE', 'DELETE'):

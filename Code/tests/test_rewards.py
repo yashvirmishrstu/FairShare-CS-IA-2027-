@@ -526,3 +526,190 @@ def test_recalculate_all_force_writes_even_when_clean():
     cursor.execute("SELECT COUNT(*) FROM rewards WHERE status='active'")
     assert cursor.fetchone()[0] > 0
     conn.close()
+
+
+def _alice_id():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    member_id = cursor.fetchone()['id']
+    conn.close()
+    return member_id
+
+
+def test_claim_coupon_rejects_unknown_coupon_id():
+    """Claiming a coupon id that does not exist is rejected with no writes:
+    no coupon row and no point ledger entry."""
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+
+    result = MarketplaceManager.claim_coupon(alice_id, 999999)
+    assert result['ok'] is False
+    assert 'no longer available' in result['message']
+    assert len(MarketplaceManager.get_member_coupons(alice_id)) == 0
+    assert MarketplaceManager.get_point_transactions(alice_id) == []
+
+
+def test_claim_coupon_rejects_deactivated_coupon():
+    """A coupon the admin has deactivated (expired) cannot be claimed and
+    writes nothing, even though the member has plenty of points."""
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+
+    coupon = MarketplaceManager.get_active_coupons()[0]
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE coupons SET active = 0 WHERE id = ?", (coupon['id'],))
+    conn.commit()
+    conn.close()
+
+    result = MarketplaceManager.claim_coupon(alice_id, coupon['id'])
+    assert result['ok'] is False
+    assert 'no longer available' in result['message']
+    assert len(MarketplaceManager.get_member_coupons(alice_id)) == 0
+    assert MarketplaceManager.get_point_transactions(alice_id) == []
+
+
+def test_claim_coupon_rejects_double_redemption_when_balance_short():
+    """Double redemption guard: claiming the same coupon a second time must be
+    rejected when the remaining balance cannot cover it, and the failed claim
+    leaves no extra coupon row or ledger entry."""
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+    balance = EngagementEngine.view_member_rewards(alice_id)['points_balance']
+
+    # Create a coupon that costs just over half the balance, so one claim
+    # succeeds but a second one cannot be afforded.
+    cost = round(balance / 2, 2) + 1.0
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO coupons (name, description, category, cost_points, value_amount, facility_name, active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+    ''', ('Half-Balance Pass', 'Costs just over half of Alice balance.', 'Facility', cost, 0.0, None))
+    coupon_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    first = MarketplaceManager.claim_coupon(alice_id, coupon_id)
+    assert first['ok'] is True
+
+    second = MarketplaceManager.claim_coupon(alice_id, coupon_id)
+    assert second['ok'] is False
+    assert 'Insufficient points' in second['message']
+
+    # Only ONE coupon row exists, and the ledger holds exactly one debit
+    # for this coupon — the rejected claim wrote nothing.
+    claimed = MarketplaceManager.get_member_coupons(alice_id)
+    assert len(claimed) == 1
+    assert claimed[0]['coupon_id'] == coupon_id
+    ledger = MarketplaceManager.get_point_transactions(alice_id)
+    coupon_debits = [t for t in ledger if 'Claimed coupon' in t['reason']]
+    assert len(coupon_debits) == 1
+    assert coupon_debits[0]['points_delta'] == -cost
+
+
+def test_claim_coupon_insufficient_balance_writes_nothing():
+    """An insufficient-balance claim is fully atomic: no member_coupon row
+    and no point_transactions row are created."""
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+    balance = EngagementEngine.view_member_rewards(alice_id)['points_balance']
+
+    expensive = round(balance * 10, 2)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO coupons (name, description, category, cost_points, value_amount, facility_name, active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+    ''', ('Impossible Pass', 'Costs 10x the available balance.', 'Events', expensive, 0.0, None))
+    coupon_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    result = MarketplaceManager.claim_coupon(alice_id, coupon_id)
+    assert result['ok'] is False
+    assert 'Insufficient points' in result['message']
+    assert len(MarketplaceManager.get_member_coupons(alice_id)) == 0
+    assert MarketplaceManager.get_point_transactions(alice_id) == []
+
+
+def test_concurrent_claims_never_double_spend():
+    """Concurrent claims for the same coupon must not both pass the balance
+    check: the BEGIN IMMEDIATE write lock serializes them, so the points
+    balance is never double-spent. Exactly one claim succeeds."""
+    import threading
+
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+    balance = EngagementEngine.view_member_rewards(alice_id)['points_balance']
+
+    # Cost just over half the balance: only ONE of two concurrent claims can
+    # afford it.
+    cost = round(balance / 2, 2) + 1.0
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO coupons (name, description, category, cost_points, value_amount, facility_name, active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+    ''', ('Race Pass', 'Two threads race to claim it.', 'Events', cost, 0.0, None))
+    coupon_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    results = []
+    barrier = threading.Barrier(2)
+
+    def claim():
+        barrier.wait()  # maximize overlap so both hit the balance check together
+        results.append(MarketplaceManager.claim_coupon(alice_id, coupon_id))
+
+    threads = [threading.Thread(target=claim) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    ok_count = sum(1 for r in results if r['ok'])
+    assert ok_count == 1, f'exactly one claim should succeed, got {results}'
+
+    claimed = MarketplaceManager.get_member_coupons(alice_id)
+    assert len(claimed) == 1
+    assert claimed[0]['coupon_id'] == coupon_id
+
+    # Total points spent never exceeds what was available.
+    ledger = MarketplaceManager.get_point_transactions(alice_id)
+    total_spent = sum(-t['points_delta'] for t in ledger if t['points_delta'] < 0)
+    assert total_spent <= balance
+
+
+def test_concurrent_fee_credits_never_over_credit():
+    """Concurrent yearly-fee credits cannot both consume the same points:
+    the write lock serializes them and total credits never exceed the
+    available balance."""
+    import threading
+
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+    balance = EngagementEngine.view_member_rewards(alice_id)['points_balance']
+    half = round(balance / 2, 2) + 1.0
+
+    results = []
+    barrier = threading.Barrier(2)
+
+    def credit():
+        barrier.wait()
+        results.append(MarketplaceManager.apply_points_to_fee(alice_id, half))
+
+    threads = [threading.Thread(target=credit) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    ok_count = sum(1 for r in results if r['ok'])
+    assert ok_count == 1, f'exactly one fee credit should succeed, got {results}'
+
+    ledger = MarketplaceManager.get_point_transactions(alice_id)
+    total_spent = sum(-t['points_delta'] for t in ledger if t['points_delta'] < 0)
+    assert total_spent <= balance

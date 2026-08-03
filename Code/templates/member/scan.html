@@ -1,3 +1,12 @@
+{# ==============================================================================
+   IB HL CS: HUMAN-COMPUTER INTERACTION & STATE MACHINE UI
+   ==============================================================================
+   The scanner page is a real-time interaction: a USB scanner types into the
+   input field (or the camera via html5-qrcode), and each POST toggles the
+   session state (check-in <-> check-out) on the server. Facility barcode
+   cards are rendered declaratively — any element with data-barcode is drawn
+   by app.js. Live elapsed timers update every second (setInterval).
+   ============================================================================== #}
 {% extends "base.html" %}
 
 {% block title %}Facility Barcode Scanner - FairShare{% endblock %}
