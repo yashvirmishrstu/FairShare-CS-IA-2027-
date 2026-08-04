@@ -90,3 +90,32 @@ def test_preview_server_log_shows_reloader_marker():
         "with use_reloader=False and will silently serve stale code. Restart "
         "it with `python main.py` (debug=True enables the reloader)."
     )
+
+
+def test_main_launch_block_reads_port_and_falls_back_to_free_port():
+    """The launch block must read PORT (so run.sh / run.bat can choose the
+    port from outside) and fall back to a free port when the requested one
+    is busy, so a second dev instance never crashes with 'Address already
+    in use'. The decision must be gated on WERKZEUG_RUN_MAIN so the
+    auto-reloader child reuses the parent's port choice instead of
+    drifting onto a different port after every reload.
+    """
+    block = _main_run_block()
+
+    assert re.search(r"os\.environ\.get\(\s*[\"']PORT[\"']", block), (
+        "main.py must read the port from the PORT env var so the launcher "
+        "scripts can choose a free port consistently."
+    )
+    assert "WERKZEUG_RUN_MAIN" in block, (
+        "The port must be decided once, in the reloader parent "
+        "(WERKZEUG_RUN_MAIN unset), and inherited by the child - otherwise "
+        "auto-reloads could rebind a different port."
+    )
+    assert "_port_is_free" in block and "_free_port" in block, (
+        "main.py must implement the free-port fallback (_port_is_free / "
+        "_free_port) so a busy port never crashes the server."
+    )
+    assert "sys.argv" in block, (
+        "The launch block must accept an explicit port argument "
+        "(python main.py 8080 / ./run.sh 8080) for predictable overrides."
+    )

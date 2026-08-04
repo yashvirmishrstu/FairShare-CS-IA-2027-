@@ -1,0 +1,65 @@
+{# ==============================================================================
+   IB HL CS: ERROR PAGE (defensive programming)
+   ------------------------------------------------------------------------------
+   Shown when an unhandled exception bubbles out of a route in production
+   (debug=False). It is intentionally STANDALONE — it does NOT extend
+   base.html — because base.html's context processor queries the database,
+   and the very failure that produced this page may have taken the database
+   down. A self-contained page always renders, no matter what broke.
+   ============================================================================== #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>500 — FairShare</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <style>
+    body {
+      background: var(--surface);
+      color: var(--ink);
+      font-family: "Outfit", system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--gutter);
+    }
+    .error-card {
+      max-width: 520px;
+      width: 100%;
+      background: var(--surface-hi);
+      border: 4px solid var(--border-glass);
+      box-shadow: var(--shadow-glow);
+      padding: var(--margin);
+      text-align: center;
+    }
+    .error-code {
+      display: inline-block;
+      background: var(--primary);
+      color: var(--on-primary);
+      font-weight: 900;
+      font-size: 3.5rem;
+      padding: 0.25rem 1.25rem;
+      margin-bottom: 1rem;
+      border: 4px solid var(--border-glass);
+    }
+    .error-card h1 { font-size: 1.6rem; margin-bottom: 0.75rem; }
+    .error-card p  { color: var(--text-dim); margin-bottom: 1.5rem; line-height: 1.5; }
+    .error-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <main class="error-card" role="alert">
+    <span class="error-code">500</span>
+    <h1>Something went wrong</h1>
+    <p>An unexpected error occurred while processing your request.
+       The issue has been logged and the club administrator has been notified.
+       Please try again in a moment.</p>
+    <div class="error-actions">
+      <a class="btn btn-primary" href="{{ url_for('index') }}">Back to Home</a>
+      <a class="btn btn-secondary" href="javascript:window.location.reload()">Try Again</a>
+    </div>
+  </main>
+</body>
+</html>

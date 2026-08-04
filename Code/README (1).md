@@ -114,12 +114,20 @@ cd Code
 pip install -r requirements.txt
 ```
 
-4. Run the application:
+4. Run the application (pick whichever is convenient — they are identical):
 ```bash
+./run.sh              # bash / Git Bash / macOS / Linux
+# or
+run.bat               # Windows cmd / double-click
+# or
 python main.py
 ```
+All three start with debug + auto-reloader on port `5000`, or the first free
+port if 5000 is busy (see `main.py`'s launch block). Force a port with
+`./run.sh 8080` (or `run.bat 8080`).
 
-5. Open your browser and navigate to `http://127.0.0.1:5000`
+5. Open your browser and navigate to `http://127.0.0.1:5000` (or the printed
+   free port)
 
 The database is created and seeded automatically when the app starts — no `init_db` step or migration command is needed.
 

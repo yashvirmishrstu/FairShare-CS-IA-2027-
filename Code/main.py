@@ -25,9 +25,14 @@
 """
 import functools
 import math
+import os
+import secrets
+import socket
+import sys
 import uuid
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, session, Response, jsonify
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from config import Config
@@ -36,6 +41,13 @@ from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManag
 
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# CSRF protection (VULN-002 fix): every state-changing POST is rejected
+# unless it carries a per-session synchronizer token rendered into the form
+# as a hidden input. Flask-WTF's CSRFProtect validates the token against the
+# session before the route runs, so a cross-site request (auto-submitting
+# form / image from another origin) is rejected with HTTP 400.
+csrf = CSRFProtect(app)
 
 # Facility Barcode Registry — every facility has a unique scannable barcode code.
 # Members scan the code posted at a facility entrance to start their session timer,
@@ -59,19 +71,36 @@ init_db()
 # HTTP Cache Control Header for Asset Optimization & Fast Load Times (<2-3s)
 # In debug mode nothing is cached so code/template/asset edits show up instantly during development.
 #
-# IB HL CS: HTTP response headers control browser caching behaviour. In
-# production, `Cache-Control: public, max-age=3600` tells the browser and
-# any intermediate proxy they may reuse static assets for an hour, cutting
+# IB HL CS: HTTP response headers control browser caching behaviour. Only
+# static assets (CSS/JS/fonts) are marked `Cache-Control: public` so the
+# browser and any intermediate proxy may reuse them for an hour, cutting
 # repeat page-load times dramatically (meets the 2-3s load-time success
-# criterion). In debug mode we disable caching entirely so developers always
-# see fresh changes.
+# criterion). HTML pages and API/CSV responses carry session state and
+# personal data, so they are ALWAYS no-store — never cached, in debug or
+# production — which prevents a shared/demo machine from serving another
+# user's cached pages.
 @app.after_request
 def add_header(response):
     if app.debug:
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    else:
+    elif request.path.startswith('/static/'):
         response.headers['Cache-Control'] = 'public, max-age=3600'
+    else:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return response
+
+
+# ---------------------------------------------------------------------------
+# 500 ERROR HANDLER — friendly page instead of a bare stack trace
+# ---------------------------------------------------------------------------
+# In production (debug=False) an unhandled exception would otherwise leak a
+# plain "Internal Server Error" line to the client. This handler renders a
+# branded, reassuring page while the traceback still goes to the server log.
+# IB HL CS: defensive programming — the user never sees an implementation
+# detail; the operator still gets full diagnostics server-side.
+@app.errorhandler(500)
+def internal_server_error(error):
+    return render_template('500.html'), 500
 
 # ---------------------------------------------------------------------------
 # AUTHORISATION DECORATORS — IB HL CS: role-based access control (RBAC)
@@ -1307,5 +1336,76 @@ def export_rewards_csv():
         headers={"Content-disposition": "attachment; filename=fairshare_financial_reward_summaries.csv"}
     )
 
+def _port_is_free(port):
+    """Return True if nothing is listening on 127.0.0.1:port.
+
+    IB HL CS: *validation* - a quick OS probe (bind + close) answers the
+    question "is this port available?" without starting the server. The
+    socket is closed before the server binds, so the port is only briefly
+    reserved (a tiny race window that is acceptable for development).
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+        return True
+
+
+def _free_port():
+    """Ask the OS for the first free ephemeral port on loopback.
+
+    Binding to port 0 makes the OS allocate any free port; we read it back
+    and close, then the server binds it for real a moment later.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    # =========================================================================
+    # SINGLE SHARED LAUNCH ENTRY POINT
+    # =========================================================================
+    # `python main.py`, run.sh and run.bat all land here, so every way of
+    # starting the app behaves identically: debug=True (which turns on the
+    # auto-reloader) on port 5000 -- or, if 5000 is busy, the first free port.
+    #
+    # Port selection order: an explicit CLI argument (`python main.py 8080`
+    # or `./run.sh 8080`) wins; otherwise the PORT environment variable
+    # (exported by the launcher scripts); otherwise the default 5000.
+    #
+    # IB HL CS: this is *defensive programming*. A busy port is detected by
+    # an OS probe and the app falls back to a free one instead of crashing
+    # with "Address already in use".
+    #
+    # The reloader wrinkle: with debug=True, Werkzeug starts a PARENT process
+    # that supervises a CHILD process which actually serves requests. Both
+    # re-execute this block, so the port is decided ONCE in the parent
+    # (identified by WERKZEUG_RUN_MAIN being unset) and handed to the child
+    # through the PORT env var. A CLI argument survives the reload too,
+    # because Werkzeug re-executes with the same argv. Auto-reloads therefore
+    # always rebind the same port instead of drifting after file changes.
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        # Parent (reloader supervisor): decide the port once.
+        port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT") or 5000)
+        if not _port_is_free(port):
+            print(f"Port {port} is in use - picking a free port instead.")
+            port = _free_port()
+            os.environ["PORT"] = str(port)  # the child inherits this choice
+    else:
+        # Child (the actual server): reuse the parent's decision - the CLI
+        # argument if given (same argv survives the reload), else PORT.
+        port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT") or 5000)
+
+    # SECRET_KEY is env-only in config.py (no hardcoded fallback - deploy
+    # safety). For LOCAL development, generate a fresh random key so the app
+    # still runs out of the box; production must supply a real key via
+    # serve.py, which refuses to start without one.
+    if not app.config.get('SECRET_KEY'):
+        app.config['SECRET_KEY'] = secrets.token_hex(32)
+        print("WARNING: SECRET_KEY not set - generated a random one for this dev session.")
+
+    print(f"FairShare running at http://127.0.0.1:{port} (debug + auto-reloader)")
+    app.run(debug=True, port=port)
+

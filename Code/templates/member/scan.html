@@ -60,6 +60,7 @@
 
     <!-- Scanner Frame -->
     <form action="{{ url_for('member_scan') }}" method="POST" id="scanner-form" class="scanner-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="scanner-frame">
         <span class="scan-corner tl"></span><span class="scan-corner tr"></span>
         <span class="scan-corner bl"></span><span class="scan-corner br"></span>

@@ -11,6 +11,7 @@
     </div>
 
     <form action="{{ url_for('register') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="grid grid-cols-2">
         <div class="form-group">
           <label class="form-label">Full Name *</label>

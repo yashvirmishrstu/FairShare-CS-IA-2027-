@@ -20,6 +20,7 @@
     </div>
 
     <form action="{{ url_for('login') }}" method="POST" id="login-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Username</label>
         <input type="text" name="username" class="form-control" placeholder="Enter username" autocomplete="username" autofocus required>

@@ -152,3 +152,30 @@ def test_admin_analytics_json_and_csv_exports(client):
     assert rewards.status_code == 200
     assert rewards.mimetype == 'text/csv'
     assert b'Total Points Earned' in rewards.data
+
+
+# ---------------------------------------------------------------------------
+# 3. DEV-LAUNCH PORT HELPERS (runtime probe)
+# ---------------------------------------------------------------------------
+
+def test_port_helpers_probe_the_os_correctly():
+    """Runtime check of main.py's launch-port helpers: a port we are
+    actively listening on must be reported busy, and _free_port() must
+    return a port we can actually bind (so run.sh / run.bat / python
+    main.py can safely fall back to it).
+    """
+    import socket
+    from main import _port_is_free, _free_port
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)
+        busy_port = s.getsockname()[1]
+        assert not _port_is_free(busy_port), (
+            "a port we are listening on must be reported as busy"
+        )
+
+    free_port = _free_port()
+    assert isinstance(free_port, int) and 0 < free_port < 65536
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", free_port))  # must actually be bindable
