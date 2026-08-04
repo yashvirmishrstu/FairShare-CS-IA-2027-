@@ -26,9 +26,66 @@ import uuid
 import csv
 import io
 import math
+import time
 from datetime import datetime, timedelta, timezone
 from database import get_db
 from config import Config
+
+
+
+
+class LoginThrottle:
+    """Exponential-backoff rate limiting for the /login route.
+
+    IB HL CS: *security engineering* — throttling converts an O(1) brute-force
+    loop into an exponential one, and the state lives in the database so it
+    survives server restarts (persistence).
+    """
+    MAX_ATTEMPTS = 5
+    BASE_LOCK_SECONDS = 30
+    LOCK_CAP_SECONDS = 3600
+
+    @staticmethod
+    def _lock_seconds(fail_count):
+        if fail_count < LoginThrottle.MAX_ATTEMPTS:
+            return 0
+        extra = fail_count - LoginThrottle.MAX_ATTEMPTS
+        return min(LoginThrottle.BASE_LOCK_SECONDS * (2 ** extra),
+                   LoginThrottle.LOCK_CAP_SECONDS)
+
+    @staticmethod
+    def is_locked(username):
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT locked_until FROM login_attempts WHERE username = ?', (username,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row or not row['locked_until']:
+            return 0
+        remaining = row['locked_until'] - time.time()
+        return max(0, int(math.ceil(remaining)))
+
+    @staticmethod
+    def record_failure(username):
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""INSERT INTO login_attempts (username, fail_count, locked_until)
+            VALUES (?, 1, NULL)
+            ON CONFLICT(username) DO UPDATE SET fail_count = login_attempts.fail_count + 1""", (username,))
+        cursor.execute('SELECT fail_count FROM login_attempts WHERE username = ?', (username,))
+        fail_count = cursor.fetchone()['fail_count']
+        locked_until = time.time() + LoginThrottle._lock_seconds(fail_count) if fail_count >= LoginThrottle.MAX_ATTEMPTS else None
+        cursor.execute('UPDATE login_attempts SET locked_until = ? WHERE username = ?', (locked_until, username))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def clear(username):
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM login_attempts WHERE username = ?', (username,))
+        conn.commit()
+        conn.close()
 
 class RewardSettings:
     """
@@ -88,8 +145,8 @@ class EngagementEngine:
     # Single source of truth — anything that needs tier logic uses these helpers.
     TIER_KEYS = {
         'Member': 1.0,
-        'Premium': 'premium_multiplier',
-        'VIP': 'vip_multiplier',
+        'Premium': 1.0,
+        'VIP': 1.0,
     }
 
     @staticmethod
@@ -206,7 +263,7 @@ class EngagementEngine:
         loyalty_points = loyalty_months * settings['loyalty_weight']
 
         base_score = visit_points + spending_points + referral_points + facility_points + loyalty_points
-        tier_multiplier = EngagementEngine.tier_multiplier(membership_type, settings)
+        tier_multiplier = 1.0  # tier system removed
         score = base_score * tier_multiplier
 
         return {
@@ -947,7 +1004,11 @@ class MarketplaceManager:
             spent = cursor.fetchone()['s']
             balance = earned - spent
 
-            points = float(points)
+            try:
+                points = float(points)
+            except (ValueError, TypeError):
+                conn.rollback()
+                return {'ok': False, 'message': 'Please enter a positive number of points.'}
             if not math.isfinite(points) or points <= 0:
                 conn.rollback()
                 return {'ok': False, 'message': 'Please enter a positive number of points.'}

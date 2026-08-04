@@ -14,6 +14,7 @@
     </div>
 
     <form action="{{ url_for('admin_settings') }}" method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Visit Weight (Points per visit)</label>
         <input type="number" step="0.1" min="0" name="visit_weight" class="form-control" value="{{ settings.visit_weight }}" data-non-negative required>
@@ -46,15 +47,7 @@
 
       <div class="grid grid-cols-2" style="gap: 1rem;">
         <div class="form-group">
-          <label class="form-label">Premium Tier Multiplier (&times;)</label>
-          <input type="number" step="0.05" min="1.0" name="premium_multiplier" class="form-control" value="{{ settings.premium_multiplier }}" required>
-          <span style="font-size: 0.75rem; color: var(--text-dim);">Score boost for Premium members.</span>
-        </div>
         <div class="form-group">
-          <label class="form-label">VIP Tier Multiplier (&times;)</label>
-          <input type="number" step="0.05" min="1.0" name="vip_multiplier" class="form-control" value="{{ settings.vip_multiplier }}" required>
-          <span style="font-size: 0.75rem; color: var(--text-dim);">Score boost for VIP members.</span>
-        </div>
       </div>
 
       <div class="form-group">
@@ -76,7 +69,7 @@
 
     <div style="margin-top: 1.5rem; background: var(--tertiary-soft); border: 4px solid var(--border-glass); padding: 1rem; font-size: 0.85rem; box-shadow: 4px 4px 0 0 var(--shadow-color);">
       <strong style="color: var(--ink); text-transform: uppercase; letter-spacing: 0.06em;">Active Mathematical Formula:</strong><br>
-      <code style="color: var(--ink);">Total Points Earned = [ (Visits &times; {{ settings.visit_weight }}) + (Total Spending &times; {{ settings.spending_weight }}) + (Referrals &times; {{ settings.referral_weight }}) + (Facility Minutes &times; {{ settings.facility_weight }}) + (Months of Membership &times; {{ settings.loyalty_weight }}) ] &times; Tier Multiplier</code>
+      <code style="color: var(--ink); display: inline-block; white-space: normal; padding: 0.65rem 0.85rem; margin-top: 0.55rem; line-height: 1.6; width: 100%;">Total Points Earned = [ (Visits &times; {{ settings.visit_weight }}) + (Total Spending &times; {{ settings.spending_weight }}) + (Referrals &times; {{ settings.referral_weight }}) + (Facility Minutes &times; {{ settings.facility_weight }}) + (Months of Membership &times; {{ settings.loyalty_weight }})</code>
     </div>
   </div>
 </div>

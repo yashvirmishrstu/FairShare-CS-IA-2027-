@@ -13,6 +13,7 @@
   <div class="card" style="grid-column: span 1;">
     <h3>Register New Member</h3>
     <form action="{{ url_for('admin_members') }}" method="POST" style="margin-top: 1rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Full Name *</label>
         <input type="text" name="full_name" class="form-control" placeholder="John Doe" required>
@@ -34,13 +35,7 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">Membership Tier</label>
-        <select name="membership_type" class="form-control">
-          <option value="Member">Member (&times;1.0)</option>
-          <option value="Premium">Premium (&times;{{ settings.premium_multiplier }})</option>
-          <option value="VIP">VIP (&times;{{ settings.vip_multiplier }})</option>
-        </select>
-        <span style="font-size: 0.75rem; color: var(--text-dim);">Premium &amp; VIP tiers earn a boosted points multiplier.</span>
+        <!-- Membership tier system removed — all members score at 1.0x -->
       </div>
 
       <div class="form-group">
@@ -94,15 +89,11 @@
                 <details style="cursor: pointer;">
                   <summary class="btn btn-secondary btn-sm">Edit</summary>
                   <form action="{{ url_for('admin_member_edit', member_id=m.id) }}" method="POST" style="margin-top: 0.5rem; background: var(--surface-dim); padding: 0.75rem; border: 3px solid var(--border-glass);">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="text" name="full_name" value="{{ m.full_name }}" class="form-control" style="margin-bottom: 0.4rem;" required>
                     <input type="email" name="email" value="{{ m.email }}" class="form-control" style="margin-bottom: 0.4rem;" required>
                     <input type="text" name="phone" value="{{ m.phone or '' }}" class="form-control" style="margin-bottom: 0.4rem;">
-                    <label class="form-label" style="font-size: 0.75rem;">Membership Tier</label>
-                    <select name="membership_type" class="form-control" style="margin-bottom: 0.4rem;">
-                      <option value="Member" {% if m.membership_type|lower == 'member' %}selected{% endif %}>Member (&times;1.0)</option>
-                      <option value="Premium" {% if m.membership_type|lower == 'premium' %}selected{% endif %}>Premium (&times;{{ settings.premium_multiplier }})</option>
-                      <option value="VIP" {% if m.membership_type|lower == 'vip' %}selected{% endif %}>VIP (&times;{{ settings.vip_multiplier }})</option>
-                    </select>
+                    <!-- Tier selection removed — all members score at 1.0x -->
                     <label class="form-label" style="font-size: 0.75rem;">Yearly Fee ($)</label>
                     <input type="number" step="10.00" min="0" name="yearly_fee" value="{{ m.yearly_fee }}" class="form-control" style="margin-bottom: 0.4rem;">
                     <label class="form-check" style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; margin-bottom: 0.4rem;">

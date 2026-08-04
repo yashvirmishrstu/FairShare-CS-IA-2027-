@@ -10,6 +10,7 @@ def client(tmp_path, monkeypatch):
     test_db = os.path.join(tmp_path, "test_app_fairshare.db")
     monkeypatch.setattr('config.Config.DATABASE', test_db)
     app.config['TESTING'] = True
+    app.config['WTF_CSRF_ENABLED'] = False  # test client sends no CSRF token
     init_db()
 
     with app.test_client() as client:
@@ -19,6 +20,34 @@ def test_home_page(client):
     response = client.get('/')
     assert response.status_code == 200
     assert b'FairShare' in response.data
+
+def test_csrf_protection_active_and_token_present(client):
+    """VULN-002: with CSRF enabled, a tokenless POST is rejected (HTTP 400)
+    and the rendered login form carries a working csrf_token that the same
+    session can submit successfully."""
+    app.config['WTF_CSRF_ENABLED'] = True
+    try:
+        resp = client.get('/login')
+        assert resp.status_code == 200
+        m = re.search(rb'name="csrf_token" value="([^"]+)"', resp.data)
+        assert m is not None, "login form must render a csrf_token hidden input"
+        token = m.group(1).decode()
+
+        # A POST without the token is rejected before the route runs.
+        rejected = client.post('/login', data={
+            'username': 'alice', 'password': 'password123'
+        })
+        assert rejected.status_code == 400
+
+        # The same POST with the rendered token succeeds.
+        accepted = client.post('/login', data={
+            'username': 'alice', 'password': 'password123', 'csrf_token': token
+        }, follow_redirects=True)
+        assert accepted.status_code == 200
+        assert b'Welcome back, alice!' in accepted.data
+    finally:
+        app.config['WTF_CSRF_ENABLED'] = False
+
 
 def test_member_login_success(client):
     response = client.post('/login', data={
@@ -398,7 +427,7 @@ def test_redeem_recreates_stable_voucher_and_preserves_marketplace_access(client
     # new code on every read.
     for reload_response in (client.get('/member/rewards'), client.get('/member/rewards')):
         assert reload_response.status_code == 200
-        match = re.search(rb'data-qr="(FS-RED-[A-Z0-9]{8})"', reload_response.data)
+        match = re.search(rb'data-qr="(FS-RED-[A-Z0-9]{16})"', reload_response.data)
         assert match is not None
         assert match.group(1).decode() == active_code
 
@@ -712,3 +741,94 @@ def test_member_scan_checkin_checkout_flow(client):
     cursor.execute("SELECT COUNT(*) FROM facility_checkins WHERE status = 'completed'")
     assert cursor.fetchone()[0] >= 1
     conn.close()
+
+
+def test_login_locks_out_after_repeated_failures(client):
+    """VULN-003: after the failure threshold the account is locked — even a
+    correct password is rejected while the lock window is active."""
+    from models import LoginThrottle
+
+    # Stay under the threshold first: 3 failures still allow a correct login.
+    for _ in range(3):
+        client.post('/login', data={'username': 'alice', 'password': 'wrongpass'})
+    ok = client.post('/login', data={'username': 'alice', 'password': 'password123'},
+                     follow_redirects=True)
+    assert b'Welcome back, alice!' in ok.data
+
+    # Now exceed the threshold: 5 more failures lock the account.
+    for _ in range(5):
+        client.post('/login', data={'username': 'alice', 'password': 'wrongpass'})
+    locked = client.post('/login', data={'username': 'alice', 'password': 'password123'},
+                         follow_redirects=True)
+    assert b'Too many failed login attempts' in locked.data
+    assert b'Welcome back, alice!' not in locked.data
+    assert LoginThrottle.is_locked('alice') > 0
+
+
+def test_login_lock_clears_on_success(client):
+    """A successful login resets the failure counter, so a member who then
+    mistypes a few times is not locked out by an old streak."""
+    from models import LoginThrottle
+
+    for _ in range(3):
+        client.post('/login', data={'username': 'alice', 'password': 'wrongpass'})
+    ok = client.post('/login', data={'username': 'alice', 'password': 'password123'},
+                     follow_redirects=True)
+    assert b'Welcome back, alice!' in ok.data
+    assert LoginThrottle.is_locked('alice') == 0
+
+    # 3 more failures stay under the threshold (counter was reset to zero).
+    for _ in range(3):
+        client.post('/login', data={'username': 'alice', 'password': 'wrongpass'})
+    ok2 = client.post('/login', data={'username': 'alice', 'password': 'password123'},
+                      follow_redirects=True)
+    assert b'Welcome back, alice!' in ok2.data
+
+
+def test_guest_code_login_is_rate_limited(client):
+    """Repeatedly failing a guest-code sign-in locks that code out too."""
+    for _ in range(6):
+        response = client.post('/login', data={'guest_code': 'GST-BADCODE'},
+                               follow_redirects=True)
+    assert b'Too many failed login attempts' in response.data
+
+
+def test_guest_quick_route_cannot_bypass_throttle(client):
+    """The /guest/quick check-in path accepts guest codes too, so it must
+    enforce the same exponential-backoff lockout — otherwise it would be an
+    unbounded brute-force vector for guessing guest pass codes."""
+    from models import LoginThrottle
+
+    # A code that doesn't exist yet, so every attempt fails and counts up.
+    bad_code = 'GST-NEVER4'
+    for _ in range(6):
+        response = client.post('/guest/quick', data={
+            'guest_code': bad_code,
+            'service_name': 'Bistro & Lounge',
+            'amount': '25.00',
+        }, follow_redirects=True)
+        assert b'Invalid Guest Pass Code' in response.data
+
+    # The 7th attempt is refused outright — locked, no further lookups.
+    locked = client.post('/guest/quick', data={
+        'guest_code': bad_code,
+        'service_name': 'Bistro & Lounge',
+        'amount': '25.00',
+    }, follow_redirects=True)
+    assert b'Too many failed login attempts' in locked.data
+    assert LoginThrottle.is_locked(bad_code) > 0
+
+    # A successful code still works afterwards (the throttle is per-code).
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+    from models import GuestManager
+    guest = GuestManager.create_guest_id(alice_id, "Quick Throttle Guest")
+    ok = client.post('/guest/quick', data={
+        'guest_code': guest['guest_code'],
+        'service_name': 'Bistro & Lounge',
+        'amount': '25.00',
+    }, follow_redirects=True)
+    assert b'Welcome,' in ok.data

@@ -34,6 +34,7 @@
      python check_endpoints.py --live http://127.0.0.1:5001
 """
 import argparse
+import os
 import re
 import sys
 import urllib.request
@@ -42,6 +43,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
+
+# config.py fails closed without a SECRET_KEY (VULN-001 fix). This is a dev
+# health-check tool that imports the app for its URL map; a throwaway key is
+# fine for static analysis.
+os.environ.setdefault("SECRET_KEY", "check-endpoints-harness-dev-key")
 
 # Regex matching url_for('endpoint', ...) and url_for("endpoint", ...)
 # in both Python (main.py) and Jinja ({{ url_for('x') }}) contexts.

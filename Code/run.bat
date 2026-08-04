@@ -22,5 +22,14 @@ if errorlevel 1 (
 )
 
 set "PORT="
+
+REM SECRET_KEY is REQUIRED and the app fails closed without it (no public
+REM fallback). For local development generate a fresh random key per launch
+REM if the caller did not supply one. A real deployment must set its own.
+if not defined SECRET_KEY (
+    for /f "delims=" %%i in ('python -c "import secrets; print(secrets.token_hex(32))"') do set "SECRET_KEY=%%i"
+    echo Note: SECRET_KEY was not set - generated a fresh random key for this session.
+)
+
 echo Starting FairShare (debug + auto-reloader) - press Ctrl+C to stop.
 python main.py %*

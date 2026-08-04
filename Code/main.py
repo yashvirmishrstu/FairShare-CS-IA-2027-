@@ -26,7 +26,6 @@
 import functools
 import math
 import os
-import secrets
 import socket
 import sys
 import uuid
@@ -37,7 +36,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from config import Config
 from database import get_db, init_db
-from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManager, ReceiptManager, CSVReportGenerator, MarketplaceManager
+from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManager, ReceiptManager, CSVReportGenerator, MarketplaceManager, LoginThrottle
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -218,19 +217,28 @@ def guest_quick():
         elif amount < 0:
             flash('Transaction amount cannot be negative.', 'danger')
         else:
-            guest = GuestManager.get_guest_by_code(guest_code)
-            if not guest:
-                flash(f'Invalid Guest Pass Code "{guest_code}". Please try again.', 'danger')
+            # Rate limiting (VULN-003): same exponential-backoff lockout as
+            # /login — otherwise this route would be an unbounded brute-force
+            # vector for guessing guest pass codes.
+            remaining = LoginThrottle.is_locked(guest_code)
+            if remaining:
+                flash(f'Too many failed login attempts. Please try again in {remaining} second(s).', 'danger')
             else:
-                # Sign the guest in for the day and record the purchase in one step.
-                session.clear()
-                session['guest_id'] = guest['id']
-                session['guest_login_date'] = today
-                GuestManager.record_spending(guest['id'], service_name, amount)
-                settings = RewardSettings.get_settings()
-                pts = int(round(amount * settings['spending_weight']))
-                flash(f'Welcome, {guest["guest_name"]}! Purchase of ${amount:.2f} recorded — +{pts} pts credited to your host member.', 'success')
-                return redirect(url_for('guest_dashboard'))
+                guest = GuestManager.get_guest_by_code(guest_code)
+                if not guest:
+                    LoginThrottle.record_failure(guest_code)
+                    flash(f'Invalid Guest Pass Code "{guest_code}". Please try again.', 'danger')
+                else:
+                    LoginThrottle.clear(guest_code)
+                    # Sign the guest in for the day and record the purchase in one step.
+                    session.clear()
+                    session['guest_id'] = guest['id']
+                    session['guest_login_date'] = today
+                    GuestManager.record_spending(guest['id'], service_name, amount)
+                    settings = RewardSettings.get_settings()
+                    pts = int(round(amount * settings['spending_weight']))
+                    flash(f'Welcome, {guest["guest_name"]}! Purchase of ${amount:.2f} recorded — +{pts} pts credited to your host member.', 'success')
+                    return redirect(url_for('guest_dashboard'))
 
     return render_template('guest/quick.html')
 
@@ -379,10 +387,18 @@ def login():
     # is credited to that host member.
     guest_code = request.form.get('guest_code', '').strip().upper()
     if guest_code and not username:
+        # Guest-code sign-in is rate-limited too: repeated bad codes lock
+        # that specific code out (exponential backoff).
+        remaining = LoginThrottle.is_locked(guest_code)
+        if remaining:
+            flash(f'Too many failed login attempts. Please try again in {remaining} second(s).', 'danger')
+            return render_template('auth/login.html', tab='guest')
         guest = GuestManager.get_guest_by_code(guest_code)
         if not guest:
+            LoginThrottle.record_failure(guest_code)
             flash(f'Invalid Guest Pass Code "{guest_code}". Please try again.', 'danger')
             return render_template('auth/login.html', tab='guest')
+        LoginThrottle.clear(guest_code)
         session.clear()
         session['guest_id'] = guest['id']
         session['guest_login_date'] = today
@@ -396,6 +412,13 @@ def login():
         flash('Username and password are required fields.', 'danger')
         return render_template('auth/login.html', tab=tab)
 
+    # Rate limiting (VULN-003): if this account is currently locked out,
+    # reject the attempt BEFORE spending any work on the password check.
+    remaining = LoginThrottle.is_locked(username)
+    if remaining:
+        flash(f'Too many failed login attempts. Please try again in {remaining} second(s).', 'danger')
+        return render_template('auth/login.html', tab=tab)
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
@@ -403,6 +426,7 @@ def login():
     conn.close()
 
     if user and check_password_hash(user['password_hash'], password):
+        LoginThrottle.clear(username)
         session.clear()
         session['user_id'] = user['id']
         session['username'] = user['username']
@@ -414,6 +438,8 @@ def login():
         else:
             return redirect(url_for('member_dashboard'))
 
+    # Wrong password (or unknown username) — count it toward the lockout.
+    LoginThrottle.record_failure(username)
     flash('Invalid username or password credentials.', 'danger')
     return render_template('auth/login.html', tab=tab)
 
@@ -944,7 +970,7 @@ def admin_members():
         full_name = request.form.get('full_name', '').strip()
         email = request.form.get('email', '').strip()
         phone = request.form.get('phone', '').strip()
-        membership_type = EngagementEngine.normalize_tier(request.form.get('membership_type', 'Member'))
+        membership_type = 'Member'  # tier system removed
 
         if not username or not password or not full_name or not email:
             flash('Required fields missing for member creation.', 'danger')
@@ -993,22 +1019,14 @@ def admin_member_edit(member_id):
     conn = get_db()
     cursor = conn.cursor()
 
-    # Only update membership tier when the form actually submits it — an edit that
+    # Tier system removed — an edit that
     # omits the field (older clients, partial requests) must NEVER silently reset
-    # a Premium/VIP member back to 'Member'.
-    if 'membership_type' in request.form:
-        membership_type = EngagementEngine.normalize_tier(request.form['membership_type'])
-        cursor.execute('''
-            UPDATE members
-            SET full_name = ?, email = ?, phone = ?, membership_type = ?
-            WHERE id = ?
-        ''', (full_name, email, phone, membership_type, member_id))
-    else:
-        cursor.execute('''
-            UPDATE members
-            SET full_name = ?, email = ?, phone = ?
-            WHERE id = ?
-        ''', (full_name, email, phone, member_id))
+    # membership updates skip the tier field.
+    cursor.execute('''
+        UPDATE members
+        SET full_name = ?, email = ?, phone = ?
+        WHERE id = ?
+    ''', (full_name, email, phone, member_id))
 
     # Optional yearly-fee management: set the annual fee and/or mark it paid.
     if 'yearly_fee' in request.form and request.form['yearly_fee'] != '':
@@ -1041,12 +1059,21 @@ def admin_activity():
         except ValueError:
             transaction_value = -1.0
 
-        # IB HL CS: server-side validation — reject negative amounts before
-        # the row ever reaches the database. Converting the raw string with
-        # float() inside try/except (defensive programming) means malformed
-        # input is caught and turned into a safe sentinel (-1.0) that fails
-        # the validation below instead of crashing the server.
-        if not math.isfinite(transaction_value) or transaction_value < 0:
+        # IB HL CS: server-side validation — reject bad values before the row
+        # ever reaches the database. Converting the raw string with float()
+        # inside try/except (defensive programming) means malformed input is
+        # caught and turned into a safe sentinel (-1.0) that fails the
+        # validation below instead of crashing the server.
+        #
+        # activity_type is validated against the schema's CHECK constraint
+        # set too: an unlisted value would otherwise raise an unhandled
+        # IntegrityError on the INSERT, which escapes before conn.close()
+        # and leaves the connection's write transaction holding a lock that
+        # blocks every later database write.
+        valid_types = ('visit', 'purchase', 'referral', 'facility')
+        if activity_type not in valid_types:
+            flash('Please select a valid activity type.', 'danger')
+        elif not math.isfinite(transaction_value) or transaction_value < 0:
             flash('Transaction value cannot be negative!', 'danger')
         else:
             # FK safety: only log activity for a member that actually exists
@@ -1278,8 +1305,8 @@ def admin_settings():
             facility_w = float(request.form.get('facility_weight', 0.2))
             loyalty_w = float(request.form.get('loyalty_weight', 5.0))
             profit_pool = float(request.form.get('profit_sharing_pool', 10000.0))
-            premium_mult = float(request.form.get('premium_multiplier', 1.15))
-            vip_mult = float(request.form.get('vip_multiplier', 1.30))
+            premium_mult = 1.0  # tier system removed
+            vip_mult = 1.0  # tier system removed
             points_value = float(request.form.get('points_value_dollars', 0.50))
         except ValueError:
             flash('Invalid numeric inputs for algorithm settings.', 'danger')
@@ -1397,14 +1424,6 @@ if __name__ == '__main__':
         # Child (the actual server): reuse the parent's decision - the CLI
         # argument if given (same argv survives the reload), else PORT.
         port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT") or 5000)
-
-    # SECRET_KEY is env-only in config.py (no hardcoded fallback - deploy
-    # safety). For LOCAL development, generate a fresh random key so the app
-    # still runs out of the box; production must supply a real key via
-    # serve.py, which refuses to start without one.
-    if not app.config.get('SECRET_KEY'):
-        app.config['SECRET_KEY'] = secrets.token_hex(32)
-        print("WARNING: SECRET_KEY not set - generated a random one for this dev session.")
 
     print(f"FairShare running at http://127.0.0.1:{port} (debug + auto-reloader)")
     app.run(debug=True, port=port)

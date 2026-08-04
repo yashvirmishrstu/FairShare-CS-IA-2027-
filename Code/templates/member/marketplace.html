@@ -36,6 +36,7 @@
             &middot; each point is worth <strong>${{ "%.2f"|format(fee.points_value_dollars) }}</strong>
           </p>
           <form action="{{ url_for('member_marketplace_fee') }}" method="POST" style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.75rem;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="number" name="points" min="1" step="1" class="form-control"
                    placeholder="Points to credit"
                    style="max-width: 190px; font-size: 0.9rem; padding: 0.65rem;"
@@ -87,6 +88,7 @@
         {% if c.facility_name %}<p style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.75rem;">&rarr; {{ c.facility_name }}</p>{% endif %}
 
         <form action="{{ url_for('member_marketplace_claim') }}" method="POST" style="margin-top: auto;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="coupon_id" value="{{ c.id }}">
           <button type="submit" class="btn {% if affordable %}btn-emerald{% else %}btn-secondary{% endif %}" style="width: 100%;" {% if not affordable %}disabled{% endif %}>
             {% if affordable %}Claim for {{ "%.0f"|format(c.cost_points) }} pts{% else %}Need {{ "%.0f"|format(c.cost_points) }} pts{% endif %}

@@ -553,9 +553,14 @@ function initAdminAnalytics() {
 
   if (!peakChartElem && !facilityChartElem && !rewardChartElem) return;
 
-  fetch('/admin/api/analytics')
-    .then(res => res.json())
-    .then(data => {
+  // Defer chart rendering until the Outfit typeface has finished loading.
+  // Chart.js canvases snapshot the available fonts at draw-time, so if the
+  // Google Font stylesheet is still in-flight the axes / ticks / tooltips
+  // render with a system fallback instead of Outfit and can never recover.
+  document.fonts.ready.then(() => {
+    fetch('/admin/api/analytics')
+      .then(res => res.json())
+      .then(data => {
       // 1. Facility Usage Trends Chart
       if (facilityChartElem && data.facility_trends) {
         const labels = data.facility_trends.map(item => item.facility_name);
@@ -575,11 +580,12 @@ function initAdminAnalytics() {
             }]
           },
           options: {
+            font: { family: 'Outfit' },
             responsive: true,
             plugins: { legend: { labels: { color: '#1c1b1b', font: { family: 'Outfit', weight: 700 } } } },
             scales: {
-              x: { ticks: { color: '#1c1b1b' }, grid: { color: 'rgba(18,18,18,0.15)' } },
-              y: { ticks: { color: '#1c1b1b' }, grid: { color: 'rgba(18,18,18,0.15)' } }
+              x: { ticks: { color: '#1c1b1b', font: { family: 'Outfit', weight: 600 } }, grid: { color: 'rgba(18,18,18,0.15)' } },
+              y: { ticks: { color: '#1c1b1b', font: { family: 'Outfit', weight: 600 } }, grid: { color: 'rgba(18,18,18,0.15)' } }
             }
           }
         });
@@ -605,11 +611,12 @@ function initAdminAnalytics() {
             }]
           },
           options: {
+            font: { family: 'Outfit' },
             responsive: true,
             plugins: { legend: { labels: { color: '#1c1b1b', font: { family: 'Outfit', weight: 700 } } } },
             scales: {
-              x: { ticks: { color: '#1c1b1b' }, grid: { color: 'rgba(18,18,18,0.15)' } },
-              y: { ticks: { color: '#1c1b1b' }, grid: { color: 'rgba(18,18,18,0.15)' } }
+              x: { ticks: { color: '#1c1b1b', font: { family: 'Outfit', weight: 600 } }, grid: { color: 'rgba(18,18,18,0.15)' } },
+              y: { ticks: { color: '#1c1b1b', font: { family: 'Outfit', weight: 600 } }, grid: { color: 'rgba(18,18,18,0.15)' } }
             }
           }
         });
@@ -632,13 +639,13 @@ function initAdminAnalytics() {
             }]
           },
           options: {
-            responsive: true,
-            plugins: { legend: { labels: { color: '#1c1b1b', font: { family: 'Outfit', weight: 700 } } } }
-          }
+            font: { family: 'Outfit' },
+            responsive: true,plugins: { legend: { position: 'bottom', labels: { color: '#1c1b1b', font: { family: 'Outfit', weight: 700 } } } } }
         });
       }
-    })
-    .catch(err => console.error("Error loading analytics:", err));
+      })
+      .catch(err => console.error("Error loading analytics:", err));
+  });
 }
 
 // Session Points Counter — accumulates points from flash messages across

@@ -24,10 +24,6 @@
 import os
 import sys
 
-from waitress import serve
-
-from main import app
-
 
 def main():
     # config.py deliberately has NO hardcoded SECRET_KEY fallback (deploy
@@ -38,6 +34,13 @@ def main():
         print("ERROR: SECRET_KEY environment variable is required.", file=sys.stderr)
         print('Generate one with: python -c "import secrets; print(secrets.token_hex(32))"', file=sys.stderr)
         sys.exit(1)
+
+    # Import AFTER the secret check: importing main imports config, which
+    # fails closed at import time when SECRET_KEY is missing (VULN-001 fix).
+    # Checking first lets serve.py print its own friendly message instead of
+    # surfacing config.py's RuntimeError traceback.
+    from waitress import serve
+    from main import app
 
     host = os.environ.get('HOST', '0.0.0.0')
     port = int(os.environ.get('PORT', 5000))

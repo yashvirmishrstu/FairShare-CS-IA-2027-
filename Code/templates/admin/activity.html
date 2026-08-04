@@ -24,6 +24,7 @@
     <h3>Issue Expense Receipt</h3>
     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Create a receipt with a scannable QR — members &amp; guests scan it at the end of the purchase to log the expense automatically.</p>
     <form action="{{ url_for('admin_receipt_issue') }}" method="POST" style="margin-top: 1rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Service / Description</label>
         <input type="text" name="service_name" class="form-control" placeholder="e.g. Restaurant Dining" required>
@@ -69,6 +70,7 @@
   <div class="card" style="grid-column: span 1;">
     <h3>Log Member Activity</h3>
     <form action="{{ url_for('admin_activity') }}" method="POST" style="margin-top: 1rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Select Member</label>
         <select name="member_id" class="form-control" required>
@@ -108,17 +110,17 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Timestamp</th>
+            <th style="white-space: nowrap;">Timestamp</th>
             <th>Member</th>
             <th>Type</th>
             <th>Description</th>
-            <th>Value ($)</th>
+            <th style="white-space: nowrap;">Value ($)</th>
           </tr>
         </thead>
         <tbody>
           {% for act in activities %}
             <tr>
-              <td>{{ act.created_at }}</td>
+              <td style="white-space: nowrap;">{{ act.created_at }}</td>
               <td><strong>{{ act.full_name }}</strong><br><code style="font-size: 0.75rem;">{{ act.member_code }}</code></td>
               <td>
                 {% if act.activity_type == 'visit' %}
@@ -132,7 +134,7 @@
                 {% endif %}
               </td>
               <td>{{ act.service_name }}</td>
-              <td>${{ "%.2f"|format(act.transaction_value) }}</td>
+              <td style="white-space: nowrap;">${{ "%.2f"|format(act.transaction_value) }}</td>
             </tr>
           {% else %}
             <tr><td colspan="5" style="text-align:center; color: var(--text-dim);">No activities recorded in ledger.</td></tr>
@@ -150,6 +152,7 @@
     <h3>Check In Member</h3>
     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Record a member's arrival at a facility.</p>
     <form action="{{ url_for('admin_checkin') }}" method="POST" style="margin-top: 1rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Select Member</label>
         <select name="member_id" class="form-control" required>
@@ -179,21 +182,21 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Member</th>
-            <th>Facility</th>
-            <th>Check In</th>
-            <th>Check Out</th>
-            <th>Duration</th>
-            <th>Action</th>
+            <th style="white-space: nowrap;">Member</th>
+            <th style="white-space: nowrap;">Facility</th>
+            <th style="white-space: nowrap;">Check In</th>
+            <th style="white-space: nowrap;">Check Out</th>
+            <th style="white-space: nowrap;">Duration</th>
+            <th style="white-space: nowrap;">Action</th>
           </tr>
         </thead>
         <tbody>
           {% for chk in checkins %}
             <tr>
-              <td><strong>{{ chk.full_name }}</strong><br><code style="font-size: 0.75rem;">{{ chk.member_code }}</code>{% if chk.guest_name %} <span class="badge badge-purple">Guest: {{ chk.guest_name }}</span>{% endif %}</td>
-              <td>{{ chk.facility_name }}</td>
-              <td>{{ chk.check_in_time }}</td>
-              <td>{{ chk.check_out_time or '—' }}</td>
+              <td style="white-space: nowrap;"><strong>{{ chk.full_name }}</strong><br><code style="font-size: 0.75rem;">{{ chk.member_code }}</code>{% if chk.guest_name %} <span class="badge badge-purple">Guest: {{ chk.guest_name }}</span>{% endif %}</td>
+              <td style="white-space: nowrap;">{{ chk.facility_name }}</td>
+              <td style="white-space: nowrap;">{{ chk.check_in_time }}</td>
+              <td style="white-space: nowrap;">{{ chk.check_out_time or '—' }}</td>
               <td>
                 {% if chk.status == 'completed' %}
                   <span class="badge badge-emerald">{{ chk.duration_minutes }} mins</span>
@@ -204,6 +207,7 @@
               <td>
                 {% if chk.status == 'active' %}
                   <form action="{{ url_for('admin_checkout', checkin_id=chk.id) }}" method="POST" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-emerald btn-sm">Check Out</button>
                   </form>
                 {% else %}

@@ -65,6 +65,22 @@ ADMIN_PAGES = [
 # Error signatures that must never appear in a rendered page body.
 ERROR_MARKERS = [b'BuildError', b'Traceback (most recent call last)', b'Internal Server Error']
 
+# Any rendered page containing a POST form must also carry a CSRF token
+# (VULN-002: synchronizer tokens on every POST form).
+CSRF_TOKEN_FIELD = b'name="csrf_token"'
+
+
+def _assert_csrf_on_all_post_forms(response_data, page):
+    """Every <form method="POST"> in a rendered page must be accompanied by
+    a hidden csrf_token input; otherwise a future form could silently lose
+    CSRF protection."""
+    forms = response_data.count(b'method="POST"')
+    tokens = response_data.count(CSRF_TOKEN_FIELD)
+    assert tokens >= forms, (
+        f'{page} renders {forms} POST form(s) but only {tokens} csrf_token '
+        f'field(s) — every POST form must carry a CSRF token'
+    )
+
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -72,6 +88,7 @@ def client(tmp_path, monkeypatch):
     test_db = os.path.join(tmp_path, 'test_health_fairshare.db')
     monkeypatch.setattr('config.Config.DATABASE', test_db)
     app.config['TESTING'] = True
+    app.config['WTF_CSRF_ENABLED'] = False  # test client sends no CSRF token
     init_db()
     with app.test_client() as client:
         yield client
@@ -116,6 +133,7 @@ def test_member_suite_renders(client):
         assert response.status_code == 200, f'{page} returned {response.status_code}'
         for marker in ERROR_MARKERS:
             assert marker not in response.data, f'{page} contains {marker.decode()}'
+        _assert_csrf_on_all_post_forms(response.data, page)
 
 
 def test_admin_suite_renders(client):
@@ -126,6 +144,7 @@ def test_admin_suite_renders(client):
         assert response.status_code == 200, f'{page} returned {response.status_code}'
         for marker in ERROR_MARKERS:
             assert marker not in response.data, f'{page} contains {marker.decode()}'
+        _assert_csrf_on_all_post_forms(response.data, page)
 
 
 def test_admin_analytics_json_and_csv_exports(client):

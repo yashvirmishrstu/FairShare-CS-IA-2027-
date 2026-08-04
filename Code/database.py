@@ -28,7 +28,7 @@
 """
 import sqlite3
 import os
-import uuid
+import secrets
 from werkzeug.security import generate_password_hash
 from config import Config
 
@@ -141,8 +141,8 @@ def init_db():
             referral_weight REAL NOT NULL DEFAULT 50.0,
             facility_weight REAL NOT NULL DEFAULT 0.2,
             loyalty_weight REAL NOT NULL DEFAULT 5.0,
-            premium_multiplier REAL NOT NULL DEFAULT 1.15,
-            vip_multiplier REAL NOT NULL DEFAULT 1.30,
+            premium_multiplier REAL NOT NULL DEFAULT 1.0,
+            vip_multiplier REAL NOT NULL DEFAULT 1.0,
             profit_sharing_pool REAL NOT NULL DEFAULT 10000.00,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -206,6 +206,12 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (member_id) REFERENCES members (id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            username TEXT PRIMARY KEY,
+            fail_count INTEGER NOT NULL DEFAULT 0,
+            locked_until REAL
+        );
     ''')
 
     # ------------------------------------------------------------------
@@ -229,9 +235,9 @@ def init_db():
     if 'loyalty_weight' not in settings_cols:
         cursor.execute("ALTER TABLE reward_settings ADD COLUMN loyalty_weight REAL NOT NULL DEFAULT 5.0")
     if 'premium_multiplier' not in settings_cols:
-        cursor.execute("ALTER TABLE reward_settings ADD COLUMN premium_multiplier REAL NOT NULL DEFAULT 1.15")
+        cursor.execute("ALTER TABLE reward_settings ADD COLUMN premium_multiplier REAL NOT NULL DEFAULT 1.0")
     if 'vip_multiplier' not in settings_cols:
-        cursor.execute("ALTER TABLE reward_settings ADD COLUMN vip_multiplier REAL NOT NULL DEFAULT 1.30")
+        cursor.execute("ALTER TABLE reward_settings ADD COLUMN vip_multiplier REAL NOT NULL DEFAULT 1.0")
     if 'points_value_dollars' not in settings_cols:
         cursor.execute("ALTER TABLE reward_settings ADD COLUMN points_value_dollars REAL NOT NULL DEFAULT 0.50")
 
@@ -269,8 +275,8 @@ def init_db():
             Config.DEFAULT_VISIT_WEIGHT, Config.DEFAULT_SPENDING_WEIGHT,
             Config.DEFAULT_REFERRAL_WEIGHT, Config.DEFAULT_FACILITY_WEIGHT,
             Config.DEFAULT_LOYALTY_WEIGHT,
-            Config.DEFAULT_TIER_MULTIPLIERS['Premium'],
-            Config.DEFAULT_TIER_MULTIPLIERS['VIP'],
+            1.0,
+            1.0,
             Config.DEFAULT_PROFIT_POOL,
             Config.DEFAULT_POINTS_VALUE_DOLLARS
         ))
@@ -323,7 +329,7 @@ def init_db():
             ("Bistro & Lounge", 12.50),
         ]
         for svc, amt in demo_receipts:
-            rcode = f"RCPT-{uuid.uuid4().hex[:6].upper()}"
+            rcode = f"RCPT-{secrets.token_hex(8).upper()}"
             cursor.execute("INSERT INTO receipts (receipt_code, service_name, amount) VALUES (?, ?, ?)", (rcode, svc, amt))
 
     # Seed Coupon Marketplace catalog if empty

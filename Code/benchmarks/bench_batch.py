@@ -36,6 +36,10 @@ BENCH_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BENCH_DIR)   # the Code/ package root
 sys.path.insert(0, PROJECT_ROOT)
 
+# config.py fails closed without a SECRET_KEY (VULN-001 fix). This benchmark
+# only reads algorithm weights against a throwaway DB — a throwaway key is fine.
+os.environ.setdefault("SECRET_KEY", "bench-batch-dev-key")
+
 # --- 1. Point the app at a throwaway database and initialize it -------------
 import config
 config.Config.DATABASE = os.path.join(tempfile.gettempdir(), 'bench_batch_fairshare.db')

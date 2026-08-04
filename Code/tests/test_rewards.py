@@ -1003,3 +1003,41 @@ def test_concurrent_coupon_redeems_never_double_use():
     # And it stays used — a third attempt is also refused.
     final = MarketplaceManager.use_coupon(code, alice_id)
     assert final['ok'] is False
+
+
+def test_codes_use_crypto_random_token_hex():
+    """Guest passes, receipts, and coupon codes must come from
+    secrets.token_hex(8) — 16 hex chars (128 bits of entropy) — not the old
+    predictable 6-hex uuid prefix that was guessable by brute force."""
+    import re
+    from models import ReceiptManager
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    conn.close()
+
+    # Guest pass code: GST- + 16 uppercase hex chars
+    guest_res = GuestManager.create_guest_id(alice_id, "Crypto Guest")
+    assert re.fullmatch(r'GST-[0-9A-F]{16}', guest_res['guest_code']), guest_res['guest_code']
+
+    # Receipt code: RCPT- + 16 uppercase hex chars
+    receipt = ReceiptManager.issue_receipt("Crypto Dining", 25.00)
+    assert re.fullmatch(r'RCPT-[0-9A-F]{16}', receipt['receipt_code']), receipt['receipt_code']
+
+    # Coupon code: CPN- + 16 uppercase hex chars
+    EngagementEngine.recalculate_all()
+    coupon = MarketplaceManager.get_active_coupons()[0]
+    claim = MarketplaceManager.claim_coupon(alice_id, coupon['id'])
+    assert claim['ok'] is True
+    assert re.fullmatch(r'CPN-[0-9A-F]{16}', claim['coupon_code']), claim['coupon_code']
+
+    # Redemption voucher code: FS-RED- + 16 uppercase hex chars (the voucher
+    # is minted by the rewards recompute, same strong entropy class).
+    rewards = EngagementEngine.view_all_rewards()
+    voucher_code = rewards[alice_id]['redemption_code']
+    assert re.fullmatch(r'FS-RED-[0-9A-F]{16}', voucher_code), voucher_code
+
+    # The 16-hex codes are materially longer than the old 6-hex prefix.
+    assert len(claim['coupon_code']) > len('CPN-ABCDEF')

@@ -13,6 +13,7 @@
   <div class="card" style="grid-column: span 1;">
     <h3>Add New Coupon</h3>
     <form action="{{ url_for('admin_marketplace') }}" method="POST" style="margin-top: 1rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="add">
       <div class="form-group">
         <label class="form-label">Coupon Name *</label>
@@ -85,6 +86,7 @@
               </td>
               <td>
                 <form action="{{ url_for('admin_marketplace') }}" method="POST">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="action" value="toggle">
                   <input type="hidden" name="coupon_id" value="{{ c.id }}">
                   <button type="submit" class="btn btn-sm {% if c.active %}btn-secondary{% else %}btn-emerald{% endif %}">

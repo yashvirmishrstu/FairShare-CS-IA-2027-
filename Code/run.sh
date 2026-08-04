@@ -23,5 +23,14 @@ if ! command -v python >/dev/null 2>&1; then
 fi
 
 unset PORT 2>/dev/null || true
+
+# SECRET_KEY is REQUIRED and the app fails closed without it (no public
+# fallback). For local development generate a fresh random key per launch
+# if the caller did not supply one. A real deployment must export its own.
+if [ -z "${SECRET_KEY:-}" ]; then
+    export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+    echo "Note: SECRET_KEY was not set - generated a fresh random key for this session."
+fi
+
 echo "Starting FairShare (debug + auto-reloader) - press Ctrl+C to stop."
 exec python main.py "$@"

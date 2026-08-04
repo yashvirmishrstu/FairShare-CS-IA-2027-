@@ -50,7 +50,7 @@ class Config:
     DEFAULT_REFERRAL_WEIGHT = 50.0   # 50 points per guest referral
     DEFAULT_FACILITY_WEIGHT = 0.2     # 0.2 points per facility-minute used
     DEFAULT_LOYALTY_WEIGHT = 5.0      # 5 points per month of membership
-    DEFAULT_TIER_MULTIPLIERS = {'Member': 1.0, 'Premium': 1.15, 'VIP': 1.30}
+    DEFAULT_TIER_MULTIPLIERS = {'Member': 1.0}  # tier system removed
     DEFAULT_PROFIT_POOL = 10000.00   # $10,000 reward pool funding the coupon marketplace
     DEFAULT_POINTS_VALUE_DOLLARS = 0.50  # each point is worth $0.50 against the yearly fee
     DEFAULT_YEARLY_FEE = 1200.00     # standard yearly club membership fee

@@ -91,6 +91,7 @@ code {
   padding: 0.05rem 0.35rem;
   font-weight: 700;
   font-size: 0.85em;
+  white-space: nowrap;
 }
 
 /* ------------------------------------------------------------
@@ -430,6 +431,9 @@ code {
   letter-spacing: 0.1em;
   font-weight: 800;
   opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stat-value {
@@ -507,8 +511,14 @@ code {
   border: 4px solid var(--ink);
   cursor: pointer;
   white-space: nowrap;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.15s ease;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.15s ease, filter 0.15s ease;
   text-decoration: none;
+}
+
+.btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 0 var(--shadow-color);
+  filter: brightness(1.06);
 }
 
 .btn:active {

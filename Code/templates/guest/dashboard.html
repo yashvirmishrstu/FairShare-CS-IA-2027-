@@ -14,6 +14,7 @@
     </p>
   </div>
   <form action="{{ url_for('guest_logout') }}" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="btn btn-secondary btn-sm">End Visit</button>
   </form>
 </div>
@@ -75,6 +76,7 @@
     {% endif %}
 
     <form action="{{ url_for('guest_scan') }}" method="POST" id="scanner-form" class="scanner-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="scanner-frame">
         <span class="scan-corner tl"></span><span class="scan-corner tr"></span>
         <span class="scan-corner bl"></span><span class="scan-corner br"></span>
@@ -121,6 +123,7 @@
       <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.5rem;">Scan the QR printed at the end of your receipt — the expense is logged and credited to your host member.</p>
 
       <form action="{{ url_for('guest_receipt_scan') }}" method="POST" id="receipt-scanner-form" class="scanner-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="scanner-frame">
           <span class="scan-corner tl"></span><span class="scan-corner tr"></span>
           <span class="scan-corner bl"></span><span class="scan-corner br"></span>
@@ -166,6 +169,7 @@
       <h3>Record a Purchase</h3>
       <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; margin-bottom: 0.85rem;">No receipt QR? Manually record spending — it still credits your host member.</p>
       <form action="{{ url_for('guest_spending') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
           <label class="form-label">Facility Service Used *</label>
           <input type="text" name="service_name" class="form-control" placeholder="e.g. Pro Shop / Restaurant Dining" required>

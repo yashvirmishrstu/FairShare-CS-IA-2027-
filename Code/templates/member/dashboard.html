@@ -45,7 +45,7 @@
         <span class="badge badge-blue" style="margin-bottom: 0.4rem;">Club Member</span>
         <h2 style="font-size: 1.6rem; margin: 0;">{{ member.full_name }}</h2>
         <p style="opacity: 0.9; font-size: 0.85rem; margin-top: 0.25rem;">
-          {{ member.membership_type }} Tier &middot; Member since {{ member.join_date[:10] }}
+          Member since {{ member.join_date[:10] }}
         </p>
       </div>
       <div class="member-id-code-block">
@@ -101,7 +101,7 @@
   <div class="card stat-card purple">
     <span class="stat-label">Facility Usage</span>
     <span class="stat-value">{{ rewards.details.facility_minutes }}<span style="font-size: 0.55em; opacity: 0.85;"> mins</span></span>
-    <span class="stat-desc">{{ rewards.details.visit_count }} visits &middot; {{ rewards.details.loyalty_months }} months &middot; {{ rewards.details.membership_type }} tier</span>
+    <span class="stat-desc">{{ rewards.details.visit_count }} visits &middot; {{ rewards.details.loyalty_months }} months</span>
   </div>
 </div>
 
@@ -192,6 +192,7 @@
         <h3 style="font-size: 1.4rem; margin-bottom: 0.25rem;">Create Guest Pass</h3>
         <p style="opacity: 0.9; font-size: 0.95rem; margin-bottom: 1rem;">Generate a Guest ID code to earn referral points. Your guest scans the QR to sign in — all their activity credits your rewards.</p>
         <form action="{{ url_for('member_guest_create') }}" method="POST" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="text" name="guest_name" class="form-control" placeholder="Guest Full Name" required style="flex: 1; min-width: 180px; font-size: 0.9rem; padding: 0.65rem; background: var(--on-secondary); color: var(--secondary); border-color: var(--border-glass);">
           <button type="submit" class="btn" style="background: var(--on-secondary); color: var(--secondary); border-color: var(--border-glass); padding: 0.65rem 1.5rem; white-space: nowrap;">Generate Pass &rarr;</button>
         </form>
