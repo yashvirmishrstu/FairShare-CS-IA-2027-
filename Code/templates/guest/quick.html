@@ -24,6 +24,7 @@
     <div id="guest-scan-toast" class="scan-toast" hidden></div>
 
     <form action="{{ url_for('guest_quick') }}" method="POST" id="guest-login-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Guest Pass Code *</label>
         <input type="text" name="guest_code" id="guest-code-input" class="form-control"
