@@ -25,8 +25,9 @@
 import uuid
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from database import get_db
+from config import Config
 
 class RewardSettings:
     """
@@ -709,7 +710,9 @@ class MarketplaceManager:
 
     @staticmethod
     def get_member_coupons(member_id):
-        """Coupons a member has claimed, newest first."""
+        """Coupons a member has claimed, newest first, annotated with their
+        redemption deadline: expires_at (datetime), expires_at_date (str) and
+        expired (bool) so the UI can show remaining validity at a glance."""
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute('''
@@ -719,9 +722,98 @@ class MarketplaceManager:
             WHERE mc.member_id = ?
             ORDER BY mc.claimed_at DESC
         ''', (member_id,))
-        coupons = cursor.fetchall()
+        rows = cursor.fetchall()
         conn.close()
+
+        coupons = []
+        for row in rows:
+            coupon = dict(row)
+            expires = MarketplaceManager.coupon_expires_at(coupon['claimed_at'])
+            coupon['expires_at'] = expires
+            coupon['expires_at_date'] = expires.strftime('%Y-%m-%d') if expires else None
+            coupon['expired'] = MarketplaceManager.is_coupon_expired(coupon['claimed_at'])
+            coupons.append(coupon)
         return coupons
+
+    @staticmethod
+    def coupon_valid_days():
+        """How long a claimed coupon stays redeemable (days)."""
+        return Config.DEFAULT_COUPON_VALID_DAYS
+
+    @staticmethod
+    def coupon_expires_at(claimed_at):
+        """Datetime when a coupon claimed at `claimed_at` stops being valid.
+        Returns None for unparseable timestamps (defensive)."""
+        try:
+            claimed = datetime.strptime(str(claimed_at)[:19], "%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError):
+            return None
+        return claimed + timedelta(days=MarketplaceManager.coupon_valid_days())
+
+    @staticmethod
+    def is_coupon_expired(claimed_at):
+        """True once a coupon's validity window has passed. An unparseable
+        timestamp is treated as NOT expired (defensive default) so a data
+        glitch never silently voids a member's coupon."""
+        expires = MarketplaceManager.coupon_expires_at(claimed_at)
+        if expires is None:
+            return False
+        return datetime.now() > expires
+
+    @staticmethod
+    def use_coupon(coupon_code, member_id):
+        """Redeem a claimed coupon at the facility desk: marks it 'used'
+        exactly once and stamps used_at. Returns
+        {'ok': bool, 'message': str, 'coupon_code': str}.
+
+        Guards against: unknown codes, coupons belonging to another member,
+        expired coupons, and double redemption. The one-time-use guarantee
+        is enforced atomically — a conditional UPDATE ... WHERE status =
+        'active' inside a BEGIN IMMEDIATE (write-locked) transaction means
+        only ONE of two simultaneous scans can flip the row, so a coupon
+        can never be redeemed twice (same concurrency-safe dedup pattern
+        as ReceiptManager).
+        """
+        conn = get_db()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM member_coupons WHERE coupon_code = ?", (coupon_code,))
+            mc = cursor.fetchone()
+
+            if not mc:
+                conn.rollback()
+                return {'ok': False, 'message': f'Coupon code "{coupon_code}" was not found on your account.', 'coupon_code': coupon_code}
+            if mc['member_id'] != member_id:
+                conn.rollback()
+                return {'ok': False, 'message': f'Coupon {coupon_code} belongs to a different member account.', 'coupon_code': coupon_code}
+            if mc['status'] == 'used':
+                conn.rollback()
+                return {'ok': False, 'message': f'Coupon {coupon_code} has already been used — each coupon is valid for a single redemption.', 'coupon_code': coupon_code}
+
+            # Expired coupons are refused even though the row is still active.
+            if MarketplaceManager.is_coupon_expired(mc['claimed_at']):
+                conn.rollback()
+                return {'ok': False, 'message': f'Coupon {coupon_code} expired on {mc["claimed_at"][:10]} and is no longer valid.', 'coupon_code': coupon_code}
+
+            cursor.execute("SELECT name FROM coupons WHERE id = ?", (mc['coupon_id'],))
+            coupon = cursor.fetchone()
+            name = coupon['name'] if coupon else 'Coupon'
+
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Atomic one-time use: only one request can flip active -> used.
+            cursor.execute('''
+                UPDATE member_coupons SET status = 'used', used_at = ?
+                WHERE id = ? AND status = 'active'
+            ''', (now_str, mc['id']))
+            if cursor.rowcount == 0:
+                conn.rollback()
+                return {'ok': False, 'message': f'Coupon {coupon_code} has already been used.', 'coupon_code': coupon_code}
+
+            conn.commit()
+            return {'ok': True, 'message': f'Coupon "{name}" redeemed successfully — enjoy your visit!', 'coupon_code': coupon_code}
+        finally:
+            conn.close()
 
     @staticmethod
     def get_point_transactions(member_id, limit=12):

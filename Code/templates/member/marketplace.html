@@ -102,7 +102,10 @@
 <div class="grid grid-cols-2" style="gap: 1.5rem; margin-bottom: 2rem;">
   <!-- My Coupons -->
   <div class="card" style="grid-column: span 1;">
-    <h3 style="margin-bottom: 1rem;">My Coupons</h3>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h3 style="margin: 0;">My Coupons</h3>
+      <a href="{{ url_for('member_coupon_redeem') }}" class="btn btn-primary btn-sm">Redeem a coupon &rarr;</a>
+    </div>
     {% if my_coupons %}
       <div style="display: grid; gap: 1rem;">
         {% for mc in my_coupons %}
@@ -114,8 +117,15 @@
               <p style="font-weight: 800; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ mc.name }}</p>
               <code style="font-size: 0.72rem; color: var(--ink);">{{ mc.coupon_code }}</code>
               <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.2rem;">
-                {{ "%.0f"|format(mc.points_spent) }} pts &middot; {{ mc.claimed_at[:10] }}
-                &middot; <span class="{% if mc.status == 'active' %}badge-emerald{% else %}badge-black{% endif %}" style="font-weight:800;">{{ mc.status|title }}</span>
+                {{ "%.0f"|format(mc.points_spent) }} pts &middot; claimed {{ mc.claimed_at[:10] }}
+                {% if mc.status == 'used' %}
+                  &middot; <span class="badge badge-black" style="font-weight:800;">Used</span>
+                {% elif mc.expired %}
+                  &middot; <span class="badge badge-black" style="font-weight:800;">Expired {{ mc.expires_at_date }}</span>
+                {% else %}
+                  &middot; <span class="badge badge-emerald" style="font-weight:800;">Active</span>
+                  &middot; <span style="font-weight:600;">valid until {{ mc.expires_at_date }}</span>
+                {% endif %}
               </p>
             </div>
           </div>
