@@ -250,6 +250,9 @@ conn.execute("DELETE FROM point_transactions WHERE member_id=? AND reason='Verif
 conn.execute("UPDATE members SET yearly_fee=50.0, fee_points_applied=0.0, fee_paid=0 WHERE id=?", (alice_id,))
 conn.commit()
 conn.close()
+# Section 5 logged the member client out to run the guest lifecycle — sign
+# Alice back in so the fee-payoff requests below actually reach the route.
+login(c, 'alice', 'password123')
 r = c.post('/member/marketplace/fee', data={'points': '500'}, follow_redirects=True)
 check(b'pts converted to' in r.data, "large fee credit accepted")
 fee2 = MarketplaceManager.get_member_fee(alice_id)

@@ -401,6 +401,52 @@ def test_apply_points_to_fee_pays_off_and_marks_paid():
     assert 'already paid' in blocked['message']
 
 
+def test_apply_points_to_fee_clamps_over_credit_to_fee_need():
+    """Crediting MORE points than the remaining fee needs must consume only
+    what the fee requires — a round-number request can never burn surplus
+    points against a small fee, and the request is accepted as long as the
+    fee's real need is affordable."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    # A small fee so Alice's balance dwarfs the real need but not her raw
+    # round-number request.
+    cursor.execute("UPDATE members SET yearly_fee = 50.0 WHERE id = ?", (alice_id,))
+    conn.commit()
+    conn.close()
+
+    EngagementEngine.recalculate_all()
+    rate = RewardSettings.get_settings()['points_value_dollars']
+    fee_need_dollars = 50.0
+    needed_points = round(fee_need_dollars / rate, 2)
+
+    balance = EngagementEngine.view_member_rewards(alice_id)['points_balance']
+    # Alice must be able to afford the fee's real need but her raw request
+    # (500) exceeds her balance — the clamp must make it succeed.
+    assert balance >= needed_points, "seed balance should cover the fee need"
+
+    result = MarketplaceManager.apply_points_to_fee(alice_id, 500)
+    assert result['ok'] is True, result['message']
+    assert result['credited'] == round(fee_need_dollars, 2)
+    assert result['remaining'] == 0.0
+
+    # Exactly the needed points were consumed — not the full 500 request.
+    fee = MarketplaceManager.get_member_fee(alice_id)
+    assert fee['fee_paid'] is True
+    assert fee['fee_points_applied'] == round(fee_need_dollars, 2)
+
+    ledger = MarketplaceManager.get_point_transactions(alice_id)
+    fee_debits = [t for t in ledger if t['reason'] == 'Yearly membership fee credit']
+    assert len(fee_debits) == 1
+    assert fee_debits[0]['points_delta'] == -needed_points
+
+    # Once paid, further credits are rejected.
+    blocked = MarketplaceManager.apply_points_to_fee(alice_id, 10)
+    assert blocked['ok'] is False
+    assert 'already paid' in blocked['message']
+
+
 def test_points_balance_equals_earned_minus_spent():
     """points_balance is exactly lifetime earned minus everything spent in
     the ledger, and never dips below zero."""
@@ -824,6 +870,56 @@ def test_use_coupon_rejects_expired_coupon():
     cursor.execute("SELECT status FROM member_coupons WHERE coupon_code = ?", (code,))
     assert cursor.fetchone()['status'] == 'active'
     conn.close()
+
+
+def test_use_coupon_expired_message_reports_expiry_date():
+    """The expired-coupon refusal names the EXPIRY date (claim date + the
+    validity window), not the claim date — a regression test for the fix
+    that previously printed claimed_at[:10] (the day it was claimed)."""
+    from datetime import datetime, timedelta
+
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+
+    code, _ = _claim_for(alice_id)
+
+    # Backdate the claim beyond the validity window and record BOTH dates.
+    claim_dt = datetime.now() - timedelta(days=MarketplaceManager.coupon_valid_days() + 1)
+    claim_str = claim_dt.strftime("%Y-%m-%d %H:%M:%S")
+    expiry_str = (claim_dt + timedelta(days=MarketplaceManager.coupon_valid_days())).strftime("%Y-%m-%d")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE member_coupons SET claimed_at = ? WHERE coupon_code = ?", (claim_str, code))
+    conn.commit()
+    conn.close()
+
+    result = MarketplaceManager.use_coupon(code, alice_id)
+    assert result['ok'] is False
+    # The message names the expiry date, not the claim date.
+    assert expiry_str in result['message'], result['message']
+    assert claim_str[:10] not in result['message'], result['message']
+
+
+def test_use_coupon_unparseable_claimed_at_degrades_gracefully():
+    """A coupon whose claimed_at cannot be parsed is treated as NOT expired
+    (documented fail-open default) and remains redeemable — it must neither
+    crash the redemption desk nor be silently voided by the expiry check."""
+    alice_id = _alice_id()
+    EngagementEngine.recalculate_all()
+
+    code, _ = _claim_for(alice_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE member_coupons SET claimed_at = 'not-a-date' WHERE coupon_code = ?", (code,))
+    conn.commit()
+    conn.close()
+
+    # The expiry helpers degrade gracefully...
+    assert MarketplaceManager.coupon_expires_at('not-a-date') is None
+    assert MarketplaceManager.is_coupon_expired('not-a-date') is False
+    # ...so the coupon is still redeemable (no crash, no false refusal).
+    result = MarketplaceManager.use_coupon(code, alice_id)
+    assert result['ok'] is True, result['message']
 
 
 def test_coupon_expiry_helpers():

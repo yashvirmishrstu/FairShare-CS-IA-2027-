@@ -246,7 +246,7 @@ def init_db():
         cursor.execute("ALTER TABLE members ADD COLUMN fee_paid INTEGER NOT NULL DEFAULT 0")
 
     # ------------------------------------------------------------------
-    # SEEDING — IB HL CS: Test Data & the DRY principle
+    # SEEDING — IB HL CS: Pre-populated Test Data
     # ------------------------------------------------------------------
     # A fresh install has no rows, so we seed demo accounts and activity so
     # the application is immediately usable and testable. Seeding is guarded

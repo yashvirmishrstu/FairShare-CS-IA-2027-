@@ -6,7 +6,7 @@
 4. The system shall automatically calculate each member's engagement score based on configurable factors such as visits, spending and guest referrals.
 5. The system shall automatically generate personalised discounts based on the calculated engagement score without administrator intervention.
 6. The system shall display each member's current reward status, engagement score and available discounts on their dashboard.
-7. The system shall create a unique user ID barcode for the user to scan in and out of facilities.
+7. The system shall scan a unique user ID barcode for the user to check in and out of facilities.
 8. The system shall track facility usage and calculate usage duration using timestamp data.
 9. The facility should let users be able to create guest id that tracks guest visits and spending, if they do not have an ID.
 10. The system shall provide an administrative control panel allowing club managers to update algorithm weighting factors, set profit-sharing pool amounts, and view/edit member records.

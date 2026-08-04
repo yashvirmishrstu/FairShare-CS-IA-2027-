@@ -43,7 +43,7 @@ Members should be able to:
 - View their engagement score.
 - View their current reward or discount.
 - See recent visits, purchases, referrals, and facility usage.
-- Generate a barcode or QR code for check-ins.
+- Scan a barcode or QR code for check-ins.
 - Generate a redemption code for available discounts.
 - Add or register a guest visit if required.
 
@@ -80,7 +80,7 @@ These features are enough to demonstrate the main computational thinking: data s
 
 These features are good, but they should only be added after the MVP works.
 
-- QR code or barcode generation for member check-ins.
+- QR code or barcode scanning for member check-ins.
 - Guest ID creation and guest spending tracking.
 - Facility check-in and check-out timestamps.
 - Usage duration calculation.

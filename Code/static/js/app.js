@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initGuestLogin();
   initAuthTabs();
   initAdminAnalytics();
+  initPrintIdCard();
 });
 
 // Mobile navigation hamburger toggle
@@ -507,6 +508,16 @@ function initGeoDrift() {
     };
     requestAnimationFrame(drift);
   });
+}
+
+// Member ID Card print button — triggers the browser's print dialog.
+// The @media print rules in styles.css collapse the page to just the
+// ID ticket, so window.print() yields a clean single-page membership
+// card (Success Criterion 7). Guarded in case the button is absent.
+function initPrintIdCard() {
+  const btn = document.getElementById('print-id-card');
+  if (!btn) return;
+  btn.addEventListener('click', () => window.print());
 }
 
 // Short click beep to confirm a scan (single shared AudioContext)
