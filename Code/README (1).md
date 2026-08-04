@@ -145,6 +145,7 @@ Code/
 ├── config.py            # Central configuration & algorithm defaults
 ├── requirements.txt     # Python dependencies
 ├── verify_behavior.py   # Headless end-to-end lifecycle checks
+├── check_endpoints.py   # Endpoint health check (static + live stale-server probe)
 ├── benchmarks/
 │   ├── bench_batch.py        # A/B benchmark: legacy vs batch engagement engine
 │   └── _legacy_engine_ref.py # Frozen legacy engine (baseline for comparison)
@@ -290,6 +291,16 @@ Run the A/B benchmark (legacy per-member engine vs the batch engine):
 ```bash
 python benchmarks/bench_batch.py
 ```
+
+Run the endpoint health check — verifies every `url_for` endpoint referenced in templates and `main.py` resolves in the app's URL map (catches a future `BuildError` at the source):
+
+```bash
+python check_endpoints.py                      # static check only
+python check_endpoints.py --live               # also probe the running server on port 5000
+python check_endpoints.py --live http://127.0.0.1:5001
+```
+
+If the static check passes but the live probe reports **404s**, the running server is executing stale code and simply needs a restart (e.g. `python main.py` or the preview server).
 
 ## Computer Science Concepts
 

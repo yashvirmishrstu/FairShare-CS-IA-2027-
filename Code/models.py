@@ -765,10 +765,8 @@ class MarketplaceManager:
         expires = MarketplaceManager.coupon_expires_at(claimed_at)
         if expires is None:
             return False
-        # claimed_at is written by SQLite CURRENT_TIMESTAMP in UTC, so expiry
-        # must be judged against UTC now. Comparing against local time made
-        # coupons expire up to the host's UTC offset EARLY (e.g. 8h early on
-        # a UTC+8 machine) even though the full window had not elapsed.
+        # claimed_at is UTC (SQLite CURRENT_TIMESTAMP); compare against UTC
+        # now, not local time, or coupons expire up to the host's offset early.
         return datetime.now(timezone.utc).replace(tzinfo=None) > expires
 
     @staticmethod
@@ -805,7 +803,10 @@ class MarketplaceManager:
             # Expired coupons are refused even though the row is still active.
             if MarketplaceManager.is_coupon_expired(mc['claimed_at']):
                 conn.rollback()
-                return {'ok': False, 'message': f'Coupon {coupon_code} expired on {mc["claimed_at"][:10]} and is no longer valid.', 'coupon_code': coupon_code}
+                # Report the expiry date (claim + validity window), not the
+                # claim date.
+                expiry_date = MarketplaceManager.coupon_expires_at(mc['claimed_at']).strftime('%Y-%m-%d')
+                return {'ok': False, 'message': f'Coupon {coupon_code} expired on {expiry_date} and is no longer valid.', 'coupon_code': coupon_code}
 
             cursor.execute("SELECT name FROM coupons WHERE id = ?", (mc['coupon_id'],))
             coupon = cursor.fetchone()
@@ -871,19 +872,13 @@ class MarketplaceManager:
                 conn.rollback()
                 return {'ok': False, 'message': f'Insufficient points - you need {coupon["cost_points"]:.0f} pts but only have {balance:.0f} pts available.'}
 
-            # Coupon codes are 6 hex chars (~16.7M space). With the write lock
-            # held, check-then-insert guarantees a fresh code; the UNIQUE
-            # constraint on coupon_code remains the backstop. Without the
-            # check, a rare collision raised an unhandled IntegrityError and
-            # crashed the claim with a 500.
-            for _ in range(10):
+            # 6-hex codes can collide with an existing row; the UNIQUE column
+            # stays the backstop, so regenerate until the check finds a gap.
+            while True:
                 coupon_code = f"CPN-{uuid.uuid4().hex[:6].upper()}"
                 cursor.execute("SELECT 1 FROM member_coupons WHERE coupon_code = ?", (coupon_code,))
                 if not cursor.fetchone():
                     break
-            else:
-                conn.rollback()
-                return {'ok': False, 'message': 'Could not generate a unique coupon code. Please try again.'}
             cursor.execute('''
                 INSERT INTO member_coupons (member_id, coupon_id, coupon_code, points_spent, status)
                 VALUES (?, ?, ?, ?, 'active')
