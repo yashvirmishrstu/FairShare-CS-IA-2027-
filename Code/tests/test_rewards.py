@@ -401,6 +401,47 @@ def test_apply_points_to_fee_pays_off_and_marks_paid():
     assert 'already paid' in blocked['message']
 
 
+def test_apply_points_to_fee_clamps_over_credit_to_fee_need():
+    """Crediting MORE points than the remaining fee needs must consume only
+    what the fee requires — a round-number request can never burn surplus
+    points against a small fee, and the request is accepted as long as the
+    fee's real need is affordable."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE full_name = 'Alice Johnson'")
+    alice_id = cursor.fetchone()['id']
+    # A $50 fee at $0.50/pt needs exactly 100 points to pay off.
+    cursor.execute("UPDATE members SET yearly_fee = 50.0 WHERE id = ?", (alice_id,))
+    conn.commit()
+    conn.close()
+
+    EngagementEngine.recalculate_all()
+    balance = EngagementEngine.view_member_rewards(alice_id)['points_balance']
+    # Alice must be able to afford the fee's real need (100 pts) but her raw
+    # request (500) exceeds her balance — the clamp must make it succeed.
+    assert balance >= 100, "seed balance should cover the fee need"
+
+    result = MarketplaceManager.apply_points_to_fee(alice_id, 500)
+    assert result['ok'] is True, result['message']
+    assert result['credited'] == 50.0
+    assert result['remaining'] == 0.0
+
+    # Exactly the needed points were consumed — not the full 500 request.
+    fee = MarketplaceManager.get_member_fee(alice_id)
+    assert fee['fee_paid'] is True
+    assert fee['fee_points_applied'] == 50.0
+
+    ledger = MarketplaceManager.get_point_transactions(alice_id)
+    fee_debits = [t for t in ledger if t['reason'] == 'Yearly membership fee credit']
+    assert len(fee_debits) == 1
+    assert fee_debits[0]['points_delta'] == -100.0
+
+    # Once paid, further credits are rejected.
+    blocked = MarketplaceManager.apply_points_to_fee(alice_id, 10)
+    assert blocked['ok'] is False
+    assert 'already paid' in blocked['message']
+
+
 def test_points_balance_equals_earned_minus_spent():
     """points_balance is exactly lifetime earned minus everything spent in
     the ledger, and never dips below zero."""

@@ -16,7 +16,7 @@
   * Algorithm design & Big-O analysis: the original implementation scored
     members one-by-one (O(N) queries per member -> O(N^2) total). The batch
     rewrite below collapses this to a handful of GROUP BY queries over ONE
-    connection — near O(N) — see _collect_aggregates().
+    connection — exactly O(N) — see _collect_aggregates().
   * Data structures: dictionaries are used as hash maps keyed by member_id
     for O(1) lookups when joining aggregates to member rows.
   * Parameterised SQL everywhere (no string concatenation) — prevents SQL
@@ -25,7 +25,8 @@
 import uuid
 import csv
 import io
-from datetime import datetime, timedelta
+import math
+from datetime import datetime, timedelta, timezone
 from database import get_db
 from config import Config
 
@@ -253,7 +254,13 @@ class EngagementEngine:
 
     @staticmethod
     def calculate_engagement_score(member_id):
-        """Read-only engagement summary for a single member."""
+        """Read-only engagement summary for a single member.
+
+        NOTE: this is a convenience wrapper around the full batch pass
+        (calculate_all_scores), so it is O(N) even for one member — fine for
+        occasional lookups (e.g. coupon claims), but batch reads should use
+        view_all_rewards() instead.
+        """
         summaries = EngagementEngine.calculate_all_scores()
         if member_id in summaries:
             return summaries[member_id]
@@ -758,7 +765,11 @@ class MarketplaceManager:
         expires = MarketplaceManager.coupon_expires_at(claimed_at)
         if expires is None:
             return False
-        return datetime.now() > expires
+        # claimed_at is written by SQLite CURRENT_TIMESTAMP in UTC, so expiry
+        # must be judged against UTC now. Comparing against local time made
+        # coupons expire up to the host's UTC offset EARLY (e.g. 8h early on
+        # a UTC+8 machine) even though the full window had not elapsed.
+        return datetime.now(timezone.utc).replace(tzinfo=None) > expires
 
     @staticmethod
     def use_coupon(coupon_code, member_id):
@@ -860,7 +871,19 @@ class MarketplaceManager:
                 conn.rollback()
                 return {'ok': False, 'message': f'Insufficient points - you need {coupon["cost_points"]:.0f} pts but only have {balance:.0f} pts available.'}
 
-            coupon_code = f"CPN-{uuid.uuid4().hex[:6].upper()}"
+            # Coupon codes are 6 hex chars (~16.7M space). With the write lock
+            # held, check-then-insert guarantees a fresh code; the UNIQUE
+            # constraint on coupon_code remains the backstop. Without the
+            # check, a rare collision raised an unhandled IntegrityError and
+            # crashed the claim with a 500.
+            for _ in range(10):
+                coupon_code = f"CPN-{uuid.uuid4().hex[:6].upper()}"
+                cursor.execute("SELECT 1 FROM member_coupons WHERE coupon_code = ?", (coupon_code,))
+                if not cursor.fetchone():
+                    break
+            else:
+                conn.rollback()
+                return {'ok': False, 'message': 'Could not generate a unique coupon code. Please try again.'}
             cursor.execute('''
                 INSERT INTO member_coupons (member_id, coupon_id, coupon_code, points_spent, status)
                 VALUES (?, ?, ?, ?, 'active')
@@ -930,20 +953,32 @@ class MarketplaceManager:
             balance = earned - spent
 
             points = float(points)
-            if points <= 0:
+            if not math.isfinite(points) or points <= 0:
                 conn.rollback()
                 return {'ok': False, 'message': 'Please enter a positive number of points.'}
+
+            # Cap the request at the points the remaining fee actually needs
+            # BEFORE the affordability check. A member who types a round number
+            # larger than their balance must still be able to pay off a small
+            # fee (the surplus is simply not consumed), and can never burn
+            # extra points against the fee (no over-crediting).
+            fee_remaining = max(0.0, row['yearly_fee'] - row['fee_points_applied'])
+            needed_points = round(fee_remaining / rate, 2) if rate > 0 else 0.0
+            points = min(points, needed_points)
+
             if points > balance:
                 conn.rollback()
                 return {'ok': False, 'message': f'You only have {balance:.0f} points available to credit.'}
 
-            credited = round(points * rate, 2)
-            remaining = round(max(0.0, row['yearly_fee'] - row['fee_points_applied'] - credited), 2)
-            # Never allow over-crediting beyond the remaining fee
-            if remaining < 0:
-                credited = round(max(0.0, row['yearly_fee'] - row['fee_points_applied']), 2)
-                points = round(credited / rate, 2) if rate > 0 else 0.0
+            # Exact-payoff branch: the request covers (or exceeds) the fee's
+            # need, so credit the exact remaining dollars and mark it settled.
+            # Otherwise this is a partial credit at the configured rate.
+            if needed_points > 0 and points >= needed_points:
+                credited = round(fee_remaining, 2)
                 remaining = 0.0
+            else:
+                credited = round(points * rate, 2)
+                remaining = round(max(0.0, fee_remaining - credited), 2)
 
             cursor.execute('''
                 INSERT INTO point_transactions (member_id, points_delta, reason)

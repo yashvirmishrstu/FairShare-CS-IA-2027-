@@ -294,6 +294,11 @@ code {
 
   .scanner-input { font-size: 0.95rem; padding: 0.65rem 0.4rem; letter-spacing: 0.1em; }
 
+  /* Member ID card — stack identity over barcode on tablet */
+  .member-id-card { flex-direction: column; }
+  .member-id-identity { border-right: none; border-bottom: 4px solid var(--ink); }
+  .member-id-ticket { min-width: 0; width: 100%; padding: 1rem; }
+
   .badge { font-size: 0.65rem; padding: 0.2rem 0.55rem; }
 
   .form-control { font-size: 0.88rem; padding: 0.6rem 0.8rem; }
@@ -347,6 +352,13 @@ code {
 
   .scanner-input { font-size: 0.82rem; padding: 0.55rem 0.35rem; letter-spacing: 0.07em; }
   .scan-corner { width: 12px; height: 12px; border-width: 3px; }
+
+  /* Member ID card — tighter on phones */
+  .member-id-identity { padding: 1rem; }
+  .member-id-identity h2 { font-size: 1.25rem !important; }
+  .member-id-ticket { padding: 0.75rem; gap: 0.3rem; }
+  .member-id-barcode { height: 44px; }
+  .member-id-actions { justify-content: center; text-align: center; }
   .scan-line { height: 2px; }
 
   .scanner-form { margin-top: 0.85rem; }
@@ -1229,6 +1241,118 @@ footer {
   100% { transform: scale(1); }
 }
 
+
+/* ------------------------------------------------------------
+   Member ID Card — unique scannable barcode (Criterion 7)
+   Bauhaus-consistent: 4px ink borders, hard shadows, sharp
+   corners, red identity block + white scannable ticket.
+   ------------------------------------------------------------ */
+.member-id-section {
+  margin-bottom: 2rem;
+  animation: fadeIn 0.7s ease-out 0.15s both;
+}
+
+.member-id-card {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--surface-hi);
+  border: 4px solid var(--ink);
+  box-shadow: var(--shadow-glow);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+/* Left color-blocked identity panel */
+.member-id-identity {
+  background: var(--primary);
+  color: var(--on-primary);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  flex: 1.4;
+  border-right: 4px solid var(--ink);
+}
+
+.member-id-identity code {
+  background: var(--surface-hi);
+  border: 2px solid var(--ink);
+  color: var(--ink);
+}
+
+.member-id-code-block { display: flex; flex-direction: column; gap: 0.3rem; }
+.member-id-code-block .stat-label { color: inherit; opacity: 0.85; }
+
+/* Right: white barcode ticket */
+.member-id-ticket {
+  flex: 1;
+  background: var(--surface-hi);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.25rem;
+  min-width: 240px;
+}
+
+.member-id-ticket-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+}
+
+.member-id-barcode {
+  max-width: 100%;
+  height: 56px;
+  width: 100%;
+}
+
+.member-id-barcode svg { width: 100%; height: 100%; }
+
+.member-id-ticket-code {
+  font-family: 'Outfit', monospace;
+  font-weight: 900;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.member-id-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+/* ------------------------------------------------------------
+   Print styles — produce a clean single-page membership card.
+   Strategy: fully collapse (display:none) everything except the
+   .member-id-section, rather than visibility:hidden — hidden but
+   laid-out content would otherwise inflate the page height and
+   emit blank pages after page 1 on a long dashboard.
+   print-color-adjust:exact keeps the Bauhaus red identity block
+   (printers drop backgrounds by default).
+   ------------------------------------------------------------ */
+@media print {
+  .navbar, footer, .member-id-actions { display: none; }
+  .main-content > *:not(.member-id-section) { display: none; }
+  .member-id-section { margin: 0; animation: none; }
+  .member-id-card {
+    position: static;
+    width: 100%;
+    box-shadow: none;
+    border: 2px solid #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
 
 /* ------------------------------------------------------------
    Points Marketplace — coupon catalog cards
