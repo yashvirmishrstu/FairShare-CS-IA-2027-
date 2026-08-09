@@ -293,7 +293,8 @@ def init_db():
         demo_members = [
             ("alice", "password123", "Alice Johnson", "Member", "alice@example.com", "555-0101", "MBR-1001"),
             ("bob", "password123", "Bob Smith", "Member", "bob@example.com", "555-0102", "MBR-1002"),
-            ("charlie", "password123", "Charlie Davis", "Member", "charlie@example.com", "555-0103", "MBR-1003")
+            ("charlie", "password123", "Charlie Davis", "Member", "charlie@example.com", "555-0103", "MBR-1003"),
+            ("diana", "password123", "Diana Patel", "Member", "diana@example.com", "555-0104", "MBR-1004")
         ]
         
         for username, plain_pw, full_name, mtype, email, phone, mcode in demo_members:
@@ -318,6 +319,46 @@ def init_db():
                 cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value) VALUES (?, 'visit', 'Tennis Court Session', 0.0)", (member_id,))
                 cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value) VALUES (?, 'purchase', 'Bistro & Grill', 320.00)", (member_id,))
                 cursor.execute("INSERT INTO activities (member_id, activity_type, service_name, transaction_value, guest_count) VALUES (?, 'referral', 'Guest Referral - Golf Tournament', 0.0, 3)", (member_id,))
+            elif username == "diana":
+                # Second rich demo profile: a full history so reviewers can
+                # explore visits, spending, referrals, facility minutes,
+                # guest credit and loyalty points on another member.
+                cursor.execute("UPDATE members SET join_date = ? WHERE id = ?", ("2026-01-15 09:00:00", member_id))
+                demo_activities = [
+                    ("visit", "Club House Visit", 0.0, 0, "2026-02-03 10:12:00"),
+                    ("visit", "Fitness Gym Visit", 0.0, 0, "2026-05-18 07:45:00"),
+                    ("visit", "Tennis Court Session", 0.0, 0, "2026-07-22 16:30:00"),
+                    ("purchase", "Bistro & Lounge", 250.00, 0, "2026-04-11 20:05:00"),
+                    ("purchase", "Pro Shop Equipment", 180.00, 0, "2026-06-09 15:40:00"),
+                    ("purchase", "Spa & Wellness Retreat", 95.00, 0, "2026-07-25 11:20:00"),
+                    ("referral", "Guest Referral - Tennis Day", 0.0, 2, "2026-03-14 13:00:00"),
+                ]
+                for atype, svc, val, guests, created in demo_activities:
+                    cursor.execute('''
+                        INSERT INTO activities (member_id, activity_type, service_name, transaction_value, guest_count, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (member_id, atype, svc, val, guests, created))
+                # Completed facility sessions — these feed the facility-minutes stat
+                demo_checkins = [
+                    ("Club Fitness & Gym", "2026-07-10 08:00:00", "2026-07-10 08:45:00", 45),
+                    ("Swimming Pool & Spa", "2026-07-18 14:00:00", "2026-07-18 15:00:00", 60),
+                    ("Pro Golf Course", "2026-07-27 09:00:00", "2026-07-27 11:00:00", 120),
+                ]
+                for fac, cin, cout, mins in demo_checkins:
+                    cursor.execute('''
+                        INSERT INTO facility_checkins (member_id, facility_name, check_in_time, check_out_time, duration_minutes, status)
+                        VALUES (?, ?, ?, ?, ?, 'completed')
+                    ''', (member_id, fac, cin, cout, mins))
+                # Guest day-pass + spending, all credited to Diana as host
+                cursor.execute('''
+                    INSERT INTO guest_ids (guest_code, guest_name, host_member_id, created_at)
+                    VALUES (?, ?, ?, ?)
+                ''', (f"GST-{secrets.token_hex(8).upper()}", "Nina Patel", member_id, "2026-07-29 10:00:00"))
+                guest_id = cursor.lastrowid
+                cursor.execute('''
+                    INSERT INTO guest_activities (guest_id, activity_type, service_name, transaction_value, created_at)
+                    VALUES (?, 'purchase', 'Bistro & Lounge - Guest', 150.00, '2026-07-29 19:30:00')
+                ''', (guest_id,))
 
     # Seed Demo Expense Receipts (QR-scannable vouchers) if empty
     cursor.execute("SELECT COUNT(*) FROM receipts")
@@ -350,6 +391,25 @@ def init_db():
                 "INSERT INTO coupons (name, description, category, cost_points, value_amount, facility_name) VALUES (?, ?, ?, ?, ?, ?)",
                 (name, desc, cat, cost, val, facility)
             )
+
+    # Seed Diana's claimed marketplace coupons AFTER the catalog exists (so the
+    # coupon ids are known) plus the matching point-ledger entries — her
+    # spendable balance already reflects these claims.
+    cursor.execute("SELECT id FROM members WHERE member_code = 'MBR-1004'")
+    diana_row = cursor.fetchone()
+    if diana_row:
+        diana_id = diana_row['id']
+        cursor.execute("SELECT id, name, cost_points FROM coupons WHERE name IN ('Gym Day Pass', 'Tennis Court Hour') ORDER BY id")
+        for coupon in cursor.fetchall():
+            ccode = f"CPN-{secrets.token_hex(8).upper()}"
+            cursor.execute('''
+                INSERT INTO member_coupons (member_id, coupon_id, coupon_code, points_spent, status, claimed_at)
+                VALUES (?, ?, ?, ?, 'active', ?)
+            ''', (diana_id, coupon['id'], ccode, coupon['cost_points'], "2026-08-01 09:10:00"))
+            cursor.execute('''
+                INSERT INTO point_transactions (member_id, points_delta, reason, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (diana_id, -coupon['cost_points'], f"Claimed coupon: {coupon['name']}", "2026-08-01 09:10:00"))
 
     # ------------------------------------------------------------------
     # DIRTY-FLAG + TRIGGERS — IB HL CS: Event-driven processing & caching

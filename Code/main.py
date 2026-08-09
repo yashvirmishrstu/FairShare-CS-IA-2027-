@@ -452,7 +452,7 @@ def register():
     creation to administrators enforces the principle of least privilege and
     keeps the member roster trustworthy.
     """
-    flash('Public self-registration is disabled. Member accounts must be created by a club administrator.', 'info')
+    flash('Public self-registration is disabled. Member accounts must be created by an administrator.', 'info')
     return redirect(url_for('login'))
 
 @app.route('/logout')
@@ -560,9 +560,12 @@ def member_activity():
     ''', (member['id'],))
     checkins = cursor.fetchall()
 
+    # Algorithm settings for inline points computation (same formula as dashboard)
+    settings = RewardSettings.get_settings()
+
     conn.close()
 
-    return render_template('member/activity.html', activities=activities, checkins=checkins)
+    return render_template('member/activity.html', activities=activities, checkins=checkins, settings=settings)
 
 @app.route('/member/scan', methods=['GET', 'POST'])
 @login_required
@@ -754,7 +757,7 @@ def guest_receipt_scan():
 @admin_required
 def admin_checkin():
     member_id = request.form.get('member_id')
-    facility_name = request.form.get('facility_name', 'General Club House')
+    facility_name = request.form.get('facility_name', 'General Facility')
     try:
         member_id = int(member_id)
     except (TypeError, ValueError):

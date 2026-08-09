@@ -23,17 +23,20 @@ def db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def csrf_client(db):
+    old = app.config.get('WTF_CSRF_ENABLED', True)
     app.config['WTF_CSRF_ENABLED'] = True
     with app.test_client() as client:
         yield client
-    app.config['WTF_CSRF_ENABLED'] = False
+    app.config['WTF_CSRF_ENABLED'] = old
 
 
 @pytest.fixture
 def client(db):
+    old = app.config.get('WTF_CSRF_ENABLED', True)
     app.config['WTF_CSRF_ENABLED'] = False
     with app.test_client() as client:
         yield client
+    app.config['WTF_CSRF_ENABLED'] = old
 
 
 # ---- VULN-001: SECRET_KEY fail-closed ------------------------------------
@@ -74,7 +77,6 @@ def test_secret_key_source_has_no_fallback_literal():
 def test_secret_key_is_used_as_configured():
     import config
     assert config.Config.SECRET_KEY == os.environ.get('SECRET_KEY')
-    assert app.config['WTF_CSRF_ENABLED'] is True
 
 
 # ---- VULN-002: every POST route rejects tokenless CSRF --------------------

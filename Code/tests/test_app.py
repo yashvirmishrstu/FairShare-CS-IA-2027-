@@ -47,6 +47,7 @@ def test_csrf_protection_active_and_token_present(client):
         assert b'Welcome back, alice!' in accepted.data
     finally:
         app.config['WTF_CSRF_ENABLED'] = False
+        client.get('/logout')
 
 
 def test_member_login_success(client):
@@ -670,11 +671,10 @@ def test_receipt_cross_role_dedup_and_admin_validation(client):
     response = client.post('/member/receipts/scan', data={'receipt_code': receipt_code}, follow_redirects=True)
     assert b'already been scanned' in response.data
 
-def test_admin_member_edit_preserves_membership_tier(client):
-    """Editing a member's contact details must NOT reset their membership tier
-    back to 'Member' (the silent-reset bug where the edit form omitted the tier
-    field and the route defaulted to 'Member')."""
-    # Admin logs in and upgrades Alice to VIP
+def test_admin_member_edit_never_touches_membership_tier(client):
+    """With the tier system removed, editing a member's contact details must
+    NOT read or write membership_type — the tier column is dormant and must
+    never be silently reset by partial form submissions."""
     client.post('/login', data={'username': 'admin', 'password': 'admin123'}, follow_redirects=True)
 
     conn = get_db()
@@ -683,13 +683,14 @@ def test_admin_member_edit_preserves_membership_tier(client):
     alice_id = cursor.fetchone()['id']
     conn.close()
 
+    # First edit submits membership_type='VIP' — the route ignores it.
     response = client.post(f'/admin/members/edit/{alice_id}', data={
         'full_name': 'Alice Johnson', 'email': 'alice@example.com', 'phone': '555-0101',
         'membership_type': 'VIP'
     }, follow_redirects=True)
     assert b'Member record updated' in response.data
 
-    # VIP tier persists after a second edit that only changes the phone number
+    # Second edit omits membership_type entirely — still no reset.
     response = client.post(f'/admin/members/edit/{alice_id}', data={
         'full_name': 'Alice Johnson', 'email': 'alice@example.com', 'phone': '555-9999'
     }, follow_redirects=True)
@@ -700,12 +701,11 @@ def test_admin_member_edit_preserves_membership_tier(client):
     cursor.execute("SELECT membership_type FROM members WHERE id = ?", (alice_id,))
     tier = cursor.fetchone()['membership_type']
     conn.close()
-    assert tier == 'VIP'
+    assert tier == 'Member'
 
-    # The VIP multiplier flows into the member's engagement score
+    # The tier multiplier is hardcoded to 1.0 regardless of tier column.
     summary = EngagementEngine.calculate_engagement_score(alice_id)
-    settings = RewardSettings.get_settings()
-    assert summary['tier_multiplier'] == settings['vip_multiplier']
+    assert summary['tier_multiplier'] == 1.0
 
 def test_member_scan_checkin_checkout_flow(client):
     client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
@@ -801,7 +801,7 @@ def test_guest_quick_route_cannot_bypass_throttle(client):
 
     # A code that doesn't exist yet, so every attempt fails and counts up.
     bad_code = 'GST-NEVER4'
-    for _ in range(6):
+    for _ in range(5):
         response = client.post('/guest/quick', data={
             'guest_code': bad_code,
             'service_name': 'Bistro & Lounge',

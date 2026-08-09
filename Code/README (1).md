@@ -73,10 +73,30 @@ The database seeds itself on first launch (`data/fairshare.db` is created automa
 | Member | `alice` | `password123` |
 | Member | `bob` | `password123` |
 | Member | `charlie` | `password123` |
+| Member | `diana` | `password123` |
+
+`diana` (Diana Patel, `MBR-1004`) is a second rich demo profile alongside
+`alice` — she has visits, purchases, referrals, completed facility sessions,
+guest day-pass spending, and two claimed marketplace coupons, so every
+member feature can be explored on her account too.
 
 Guests do not have standing accounts — a member creates a guest day-pass from the member dashboard, which generates a unique pass code.
 
 > Note: public self-registration is intentionally disabled. Member accounts must be created by an administrator (security decision — least privilege).
+
+## Resetting the Demo Database
+
+The database only seeds when it is empty, so to get a clean set of demo
+accounts (including `diana`) back:
+
+1. Stop the running server (Ctrl+C, or end the `python serve.py` process).
+2. Delete the database files (the whole `data/` directory is gitignored, so
+   no tracked files are affected):
+   ```bash
+   rm -f data/fairshare.db data/fairshare.db-shm data/fairshare.db-wal
+   ```
+3. Start the app again (`./run.sh`, `run.bat`, or `python main.py`) — a
+   fresh `data/fairshare.db` is created and re-seeded on first launch.
 
 ## Success Criteria
 

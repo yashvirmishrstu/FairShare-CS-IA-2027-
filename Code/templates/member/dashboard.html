@@ -14,7 +14,7 @@
 {% block content %}
 <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2rem;">
   <div>
-    <span class="badge badge-blue" style="margin-bottom: 0.5rem;">Club Member</span>
+    <span class="badge badge-blue" style="margin-bottom: 0.5rem;">Member</span>
     <h1 style="font-size: 2.2rem;">Welcome back, {{ member.full_name }}!</h1>
     <p style="color: var(--text-muted); font-size: 0.95rem;">Member Code: <code>{{ member.member_code }}</code> | Joined: {{ member.join_date[:10] }}</p>
   </div>
@@ -42,7 +42,7 @@
     <!-- Left: identity block (color-blocked, Bauhaus red) -->
     <div class="member-id-identity">
       <div>
-        <span class="badge badge-blue" style="margin-bottom: 0.4rem;">Club Member</span>
+        <span class="badge badge-blue" style="margin-bottom: 0.4rem;">Member</span>
         <h2 style="font-size: 1.6rem; margin: 0;">{{ member.full_name }}</h2>
         <p style="opacity: 0.9; font-size: 0.85rem; margin-top: 0.25rem;">
           Member since {{ member.join_date[:10] }}

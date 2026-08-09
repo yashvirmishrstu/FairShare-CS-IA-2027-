@@ -338,8 +338,21 @@ function initReceiptScanner() {
     }
   });
 
-  window.addEventListener('beforeunload', () => {
-    if (scanner) scanner.stop().catch(() => {});
+  const stopScanner = () => { if (scanner) scanner.stop().catch(() => {}); };
+  window.addEventListener('beforeunload', stopScanner);
+  window.addEventListener('pagehide', stopScanner);
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && scanner && viewport.style.display !== 'none') {
+      scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        (decodedText) => {
+          playScanBeep(880, 0.12);
+          submitReceiptScan(decodedText.trim().toUpperCase());
+        },
+        () => {}
+      ).catch(() => {});
+    }
   });
 }
 
@@ -410,8 +423,21 @@ function initGuestLogin() {
       }
     });
 
-    window.addEventListener('beforeunload', () => {
-      if (scanner) scanner.stop().catch(() => {});
+    const stopScanner = () => { if (scanner) scanner.stop().catch(() => {}); };
+    window.addEventListener('beforeunload', stopScanner);
+    window.addEventListener('pagehide', stopScanner);
+    window.addEventListener('pageshow', (e) => {
+      if (e.persisted && scanner && viewport.style.display !== 'none') {
+        scanner.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          (decodedText) => {
+            playScanBeep(660, 0.1);
+            submitGuestCode(decodedText.trim().toUpperCase());
+          },
+          () => {}
+        ).catch(() => {});
+      }
     });
   }
 
@@ -485,8 +511,21 @@ function initCameraScanner() {
     }
   });
 
-  window.addEventListener('beforeunload', () => {
-    if (scanner) scanner.stop().catch(() => {});
+  const stopScanner = () => { if (scanner) scanner.stop().catch(() => {}); };
+  window.addEventListener('beforeunload', stopScanner);
+  window.addEventListener('pagehide', stopScanner);
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && scanner && viewport.style.display !== 'none') {
+      scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        (decodedText) => {
+          playScanBeep(880, 0.12);
+          submitFacilityScan(decodedText.trim().toUpperCase());
+        },
+        () => {}
+      ).catch(() => {});
+    }
   });
 }
 

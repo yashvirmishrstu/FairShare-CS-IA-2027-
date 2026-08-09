@@ -22,7 +22,7 @@
   * Parameterised SQL everywhere (no string concatenation) — prevents SQL
     injection attacks (security).
 """
-import uuid
+import secrets
 import csv
 import io
 import math
@@ -376,7 +376,7 @@ class EngagementEngine:
                 'discount_percentage': discount,
                 'points_balance': round(max(0.0, score - spent), 2),
                 'points_spent': round(spent, 2),
-                'redemption_code': existing_codes.get(member_id) or f"FS-RED-{uuid.uuid4().hex[:8].upper()}",
+                'redemption_code': existing_codes.get(member_id) or f"FS-RED-{secrets.token_hex(8).upper()}",
                 'details': summary,
             }
         return rewards_map
@@ -596,7 +596,7 @@ class GuestManager:
         """Generate a guest ID for visitors without a member ID."""
         conn = get_db()
         cursor = conn.cursor()
-        guest_code = f"GST-{uuid.uuid4().hex[:6].upper()}"
+        guest_code = f"GST-{secrets.token_hex(8).upper()}"
         cursor.execute('''
             INSERT INTO guest_ids (guest_code, guest_name, host_member_id)
             VALUES (?, ?, ?)
@@ -653,7 +653,7 @@ class ReceiptManager:
         """Create a new unscanned expense receipt voucher."""
         conn = get_db()
         cursor = conn.cursor()
-        receipt_code = f"RCPT-{uuid.uuid4().hex[:6].upper()}"
+        receipt_code = f"RCPT-{secrets.token_hex(8).upper()}"
         cursor.execute('''
             INSERT INTO receipts (receipt_code, service_name, amount)
             VALUES (?, ?, ?)
@@ -932,7 +932,7 @@ class MarketplaceManager:
             # 6-hex codes can collide with an existing row; the UNIQUE column
             # stays the backstop, so regenerate until the check finds a gap.
             while True:
-                coupon_code = f"CPN-{uuid.uuid4().hex[:6].upper()}"
+                coupon_code = f"CPN-{secrets.token_hex(8).upper()}"
                 cursor.execute("SELECT 1 FROM member_coupons WHERE coupon_code = ?", (coupon_code,))
                 if not cursor.fetchone():
                     break

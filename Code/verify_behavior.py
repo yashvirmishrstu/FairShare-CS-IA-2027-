@@ -24,6 +24,7 @@ init_db()
 
 from main import app
 app.config['TESTING'] = True
+app.config['WTF_CSRF_ENABLED'] = False  # no CSRF tokens in headless verifier
 
 FAILURES = []
 
@@ -168,7 +169,7 @@ check(b'points available' in r.data, "fee credit rejected on overdraft")
 # 4. VOUCHER REDEEM: active -> redeemed -> NEW stable active code
 # ============================================================
 r = c.get('/member/rewards')
-m = re.search(rb'data-qr="(FS-RED-[A-Z0-9]{8})"', r.data)
+m = re.search(rb'data-qr="(FS-RED-[A-Z0-9]{16})"', r.data)
 check(m is not None, "rewards page renders a QR redemption code")
 original_code = m.group(1).decode()
 
@@ -187,7 +188,7 @@ check(db_one("SELECT pending FROM rewards_recompute WHERE id=1")['pending'] == 0
 codes = set()
 for _ in range(2):
     r = c.get('/member/rewards')
-    mm = re.search(rb'data-qr="(FS-RED-[A-Z0-9]{8})"', r.data)
+    mm = re.search(rb'data-qr="(FS-RED-[A-Z0-9]{16})"', r.data)
     codes.add(mm.group(1).decode())
 check(codes == {active_code}, "reloads show the exact persisted code (stable, not regenerated)")
 

@@ -1,29 +1,17 @@
-{# ==============================================================================
-   IB HL CS: TEMPLATE INHERITANCE (server-side rendering)
-   ==============================================================================
-   base.html is the master layout. Every page template `{% extends %}` this
-   file and overrides named `{% block %}` sections (title, content). This is
-   the *DRY principle* applied to HTML: navigation, footer, flash messages
-   and the JS/CSS assets are written once and reused by every page.
-   The {% block %} mechanism is analogous to method overriding in OOP —
-   child templates specialise the parent layout.
-   ============================================================================== #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Responsive design: viewport meta tells mobile browsers to scale the
-       layout to device width (success criterion: responsive UI). -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}FairShare - Personalized Club Rewards & Points Marketplace{% endblock %}</title>
+  <title>{% block title %}FairShare - Personalized Rewards & Profit Sharing{% endblock %}</title>
 
   <!-- CSS Styles -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=15">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=5">
 
-  <!-- Outfit typeface -->
+  <!-- Typefaces: Outfit (light) · Archivo Narrow + Hanken Grotesk + JetBrains Mono (noir dark) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Archivo+Narrow:wght@500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 
   <!-- Fast JS Libraries from CDN for Barcode, QR Code, and Analytics -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
@@ -48,17 +36,22 @@
       </button>
 
       <ul class="nav-links" id="nav-links">
+        <!-- DARK MODE DISABLED — keep toggle hidden until re-enabled -->
+        <li style="display:none"><button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+          <span class="theme-toggle-icon">◐</span>
+        </button></li>
         {% if current_user %}
           {% if current_user.role == 'admin' %}
-            <li><a href="{{ url_for('admin_dashboard') }}" class="nav-link">Dashboard</a></li>
+            <li><a href="{{ url_for('admin_dashboard') }}" class="nav-link">Admin Dashboard</a></li>
             <li><a href="{{ url_for('admin_members') }}" class="nav-link">Members</a></li>
-            <li><a href="{{ url_for('admin_marketplace') }}" class="nav-link">Marketplace</a></li>
-            <li><a href="{{ url_for('admin_activity') }}" class="nav-link">Activity</a></li>
+            <li><a href="{{ url_for('admin_activity') }}" class="nav-link">Activity Log</a></li>
+            <li><a href="{{ url_for('admin_settings') }}" class="nav-link">Algorithm Settings</a></li>
+            <li><a href="{{ url_for('admin_reports') }}" class="nav-link">CSV Reports</a></li>
           {% else %}
             <li><a href="{{ url_for('member_dashboard') }}" class="nav-link">Dashboard</a></li>
+            <li><a href="{{ url_for('member_scan') }}" class="nav-link">Scan Facility</a></li>
             <li><a href="{{ url_for('member_expenses') }}" class="nav-link">My Expenses</a></li>
             <li><a href="{{ url_for('member_activity') }}" class="nav-link">My History</a></li>
-            <li><a href="{{ url_for('member_marketplace') }}" class="nav-link">Marketplace</a></li>
             <li><a href="{{ url_for('member_rewards') }}" class="nav-link">My Rewards</a></li>
           {% endif %}
           <li><a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm">Log Out ({{ current_user.username }})</a></li>
@@ -67,7 +60,6 @@
           <li><a href="{{ url_for('guest_quick') }}" class="nav-link">Record Purchase</a></li>
           <li>
             <form action="{{ url_for('guest_logout') }}" method="POST" style="display:inline;">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-secondary btn-sm">End Visit ({{ current_guest.guest_name }})</button>
             </form>
           </li>
@@ -101,14 +93,8 @@
 
     {% block content %}{% endblock %}
   </main>
-
-  <!-- Footer -->
-  <footer>
-    <span>&copy; 2026 FairShare — Club Management System</span>
-    <span>SYSTEM_STATE: STABLE</span>
-  </footer>
-
+  
   <!-- App Interactive JavaScript -->
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=7"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=6"></script>
 </body>
 </html>

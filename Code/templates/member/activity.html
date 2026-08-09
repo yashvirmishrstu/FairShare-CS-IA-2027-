@@ -5,7 +5,7 @@
 {% block content %}
 <div style="margin-bottom: 2rem;">
   <h1>My Activity & Check-In History</h1>
-  <p style="color: var(--text-muted);">View your visits, purchases, and facility session history. All activity is recorded by the club.</p>
+  <p style="color: var(--text-muted);">View your visits, purchases, and facility session history. All activity is recorded automatically.</p>
 </div>
 
 <!-- Facility Usage Duration Log Table -->
@@ -55,14 +55,23 @@
           <th>Timestamp</th>
           <th>Type</th>
           <th>Service / Details</th>
+          <th>Points Earned</th>
           <th>Transaction Value ($)</th>
           <th>Guest Referrals</th>
         </tr>
       </thead>
       <tbody>
         {% for act in activities %}
+          {% set pts = 0.0 %}
+          {% if act.activity_type == 'visit' %}
+            {% set pts = settings.visit_weight %}
+          {% elif act.activity_type == 'purchase' %}
+            {% set pts = (act.transaction_value or 0) * settings.spending_weight %}
+          {% elif act.activity_type == 'referral' %}
+            {% set pts = (act.guest_count or 0) * settings.referral_weight %}
+          {% endif %}
           <tr>
-            <td>{{ act.created_at }}</td>
+            <td style="white-space: nowrap;">{{ act.created_at }}</td>
             <td>
               {% if act.activity_type == 'visit' %}
                 <span class="badge badge-blue">Visit</span>
@@ -75,11 +84,12 @@
               {% endif %}
             </td>
             <td>{{ act.service_name }}</td>
+            <td><strong>+{{ "%.1f"|format(pts) }} pts</strong></td>
             <td>${{ "%.2f"|format(act.transaction_value) }}</td>
             <td>{{ act.guest_count }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="5" style="text-align:center; color: var(--text-dim);">No activities logged yet.</td></tr>
+          <tr><td colspan="6" style="text-align:center; color: var(--text-dim);">No activities logged yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
