@@ -123,13 +123,26 @@ the push lands on `main`. To use it:
 
 1. Set the Vercel project's **Root Directory** to `Code` (the app lives in
    that subdirectory of the repo) and set `SECRET_KEY` in the project's
-   environment variables.
+   environment variables. Add `ADMIN_PASSWORD` (a strong value) for both the
+   **Production** and **Preview** environments — and make sure
+   `SEED_DEMO_DATA` is **not** set in any environment (see the guard below).
 2. Add these **repository secrets** (Settings → Secrets and variables → Actions):
    - `VERCEL_TOKEN` — create at <https://vercel.com/account/tokens>
    - `VERCEL_ORG_ID` — your team ID (Team Settings → General)
    - `VERCEL_PROJECT_ID` — your project ID (Project Settings → General)
 3. Push to `main`. The test job needs no secrets (tests/conftest.py supplies
    a test `SECRET_KEY`); the deploy job runs only after tests pass.
+
+**The deploy job enforces safe credentials before it deploys.** Before
+building, it queries the Vercel env API and fails the run with a clear
+`::error::` if: `TURSO_URL`/`TURSO_AUTH_TOKEN` are missing from the
+production environment (one-click Turso setup), **`SEED_DEMO_DATA` is set in
+any environment** (preview deployments can never get the demo
+`alice`/`bob`/`charlie`/`diana` accounts — `SEED_DEMO_DATA=1` is only for
+local development and the CI smoke job's throwaway local `sqld`), or
+`ADMIN_PASSWORD` is absent from production/preview (so the admin never ends
+up with a random, unrecoverable password). A misconfigured project therefore
+fails the deploy instead of going live with demo accounts.
 4. After a successful production deploy, a **smoke** job boots the whole app
    against a local `sqld` server (the software Turso runs) and drives the key
    routes — member/admin logins, facility scans, rewards, coupon claim, guest

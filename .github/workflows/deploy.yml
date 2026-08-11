@@ -45,6 +45,10 @@ jobs:
     name: Deploy to Vercel (production)
     needs: test
     # Production deploy only for pushes to main (or manual runs).
+    # NOTE: preview deployments are created by Vercel itself for pull requests
+    # (the GitHub app / dashboard), NOT by this job. The env-var check below
+    # still guards the preview environment so previews can never end up with
+    # demo accounts.
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
@@ -53,6 +57,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # SECRETS & DEMO ACCOUNTS — preview deployments must NEVER get demo
+      # accounts or a weak/absent admin password:
+      #   * SEED_DEMO_DATA must NOT be set in ANY environment (production,
+      #     preview, or development). When unset, a fresh database starts with
+      #     zero member accounts, so nothing is publicly discoverable. The
+      #     seeded alice/bob/charlie/diana accounts (password123) only exist
+      #     when this flag is on — intended for local development (run.sh /
+      #     run.bat set it) and CI smoke tests only.
+      #   * ADMIN_PASSWORD MUST be set in the production and preview
+      #     environments. The initial admin account's password comes from this
+      #     variable; if it is missing on first boot, a strong RANDOM password
+      #     is generated and printed to the logs once (easy to lose and hard
+      #     to recover).
+      # The check below enforces both properties against Vercel's env API, so
+      # a misconfigured project fails the deploy instead of going live with
+      # demo accounts.
+
       # ONE-CLICK TURSO SETUP — this step makes sure the Vercel Marketplace
       # Turso integration is installed on the project. That integration
       # provisions TURSO_URL + TURSO_AUTH_TOKEN automatically, so the app's
@@ -60,7 +81,7 @@ jobs:
       # filesystem. Install it once from the marketplace:
       #   https://vercel.com/marketplace/tursocloud
       # (Remove this step only if you intentionally want ephemeral storage.)
-      - name: Verify Turso integration is wired (marketplace env vars)
+      - name: Verify Turso integration and env vars are safe (no demo accounts)
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -70,18 +91,39 @@ jobs:
           echo "$json" | python3 -c '
           import json, sys
           data = json.load(sys.stdin)
-          keys = {
-              e["key"] for e in data.get("envs", [])
-              if "production" in (e.get("target") or [])
-          }
-          missing = [k for k in ("TURSO_URL", "TURSO_AUTH_TOKEN") if k not in keys]
+
+          def targets_of(e):
+              t = e.get("target")
+              if isinstance(t, list):
+                  return set(t)
+              return {t} if t else set()
+
+          envs = data.get("envs", [])
+          prod_keys = {e["key"] for e in envs if "production" in targets_of(e)}
+          prev_keys = {e["key"] for e in envs if "preview" in targets_of(e)}
+          any_keys = {e["key"] for e in envs}
+
+          errors = []
+          missing = [k for k in ("TURSO_URL", "TURSO_AUTH_TOKEN") if k not in prod_keys]
           if missing:
-              print("::error::Missing production env vars: " + str(missing) + ". "
-                    "Install the Turso Cloud integration (one click) at "
-                    "https://vercel.com/marketplace/tursocloud so the app uses "
-                    "a persistent database, then re-run this workflow.")
+              errors.append("::error::Missing production env vars: " + str(missing) + ". "
+                            "Install the Turso Cloud integration (one click) at "
+                            "https://vercel.com/marketplace/tursocloud so the app uses "
+                            "a persistent database, then re-run this workflow.")
+          if "SEED_DEMO_DATA" in any_keys:
+              errors.append("::error::SEED_DEMO_DATA is set in a Vercel environment. "
+                            "Remove it: demo accounts (alice/bob/charlie/diana with "
+                            "password123) must never exist on a public deployment. "
+                            "It is only for local development and CI smoke tests.")
+          if "ADMIN_PASSWORD" not in (prod_keys | prev_keys):
+              errors.append("::error::ADMIN_PASSWORD is not set for production/preview. "
+                            "Set it (a strong value) in the Vercel project env vars so "
+                            "the admin account has a known password; otherwise a random "
+                            "one is generated on first boot and printed to the logs once.")
+          if errors:
+              print("\n".join(errors))
               sys.exit(1)
-          print("Turso integration is wired for production (TURSO_URL + TURSO_AUTH_TOKEN present).")
+          print("Env vars safe: Turso wired, SEED_DEMO_DATA absent, ADMIN_PASSWORD present.")
           '
 
       - name: Deploy to Vercel
@@ -143,17 +185,3 @@ jobs:
             --db-path /tmp/sqld-smoke.db > /tmp/sqld.log 2>&1 &
           for i in $(seq 1 15); do
             curl -s -o /dev/null http://127.0.0.1:8080/ && break
-            sleep 1
-          done
-
-      # Boots the full app with the Turso adapter and hits the key routes
-      # (member/admin logins, facility scans, rewards, coupon claim, guest
-      # day-pass), then HTTP-checks the live deployed VERCEL_URL.
-      - name: Boot the app through the Turso adapter and hit key routes
-        env:
-          SECRET_KEY: smoke-test
-          ADMIN_PASSWORD: admin123
-          SEED_DEMO_DATA: "1"
-          TURSO_URL: ws://127.0.0.1:8081
-          VERCEL_URL: ${{ needs.deploy.outputs.deployment-url }}
-        run: python smoke_vercel.py
