@@ -138,8 +138,9 @@ building, it queries the Vercel env API and fails the run with a clear
 `::error::` if: `TURSO_URL`/`TURSO_AUTH_TOKEN` are missing from the
 production environment (one-click Turso setup), **`SEED_DEMO_DATA` is set in
 any environment** (preview deployments can never get the demo
-`alice`/`bob`/`charlie`/`diana` accounts — `SEED_DEMO_DATA=1` is only for
-local development and the CI smoke job's throwaway local `sqld`), or
+`alice`/`bob`/`charlie`/`diana` accounts — `SEED_DEMO_DATA=1` is strictly
+opt-in, used only by the CI smoke job's throwaway local `sqld` and dev
+sandboxes that set it explicitly), or
 `ADMIN_PASSWORD` is absent from production/preview (so the admin never ends
 up with a random, unrecoverable password). A misconfigured project therefore
 fails the deploy instead of going live with demo accounts.

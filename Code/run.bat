@@ -32,10 +32,10 @@ if not defined SECRET_KEY (
 )
 
 REM Demo accounts (alice/bob/charlie/diana + marketplace data) are OPT-IN so
-REM a public deployment is never seeded with documented passwords. Local
-REM development wants them, so default to enabled here; a production deploy
-REM should NOT set SEED_DEMO_DATA.
-if not defined SEED_DEMO_DATA set "SEED_DEMO_DATA=1"
+REM a fresh database is NEVER seeded with documented passwords - not even for
+REM local development. To get the demo accounts for a dev sandbox, launch with:
+REM   set SEED_DEMO_DATA=1
+REM   run.bat
 
 echo Starting FairShare (debug + auto-reloader) - press Ctrl+C to stop.
 python main.py %*

@@ -69,7 +69,7 @@ The database seeds itself on first launch (`data/fairshare.db` is created automa
 
 **Admin account (secure by default):** the initial `admin` password is never hardcoded. On first launch it is read from the `ADMIN_PASSWORD` environment variable; if that is not set, a strong random password is generated and printed once in the startup log.
 
-**Demo member accounts (opt-in):** the demo members below exist only when `SEED_DEMO_DATA=1` — the `run.sh` / `run.bat` launchers enable it for local development.
+**Demo member accounts (opt-in):** the demo members below exist only when `SEED_DEMO_DATA=1` is set before launching (e.g. `SEED_DEMO_DATA=1 ./run.sh`) — the launchers never enable it by default.
 
 | Role | Username | Password |
 |------|----------|----------|

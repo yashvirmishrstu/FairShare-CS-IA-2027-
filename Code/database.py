@@ -585,9 +585,10 @@ def init_db():
     # Seed Demo Member Users if empty — OPT-IN ONLY (SEED_DEMO_DATA=1).
     # SECURITY (VULN-001 fix): the demo members' passwords are documented in
     # the README, so a public deployment must never contain them by default.
-    # The launcher scripts (run.sh / run.bat) and the test suite enable
-    # SEED_DEMO_DATA for local development; deployments leave it unset and
-    # create real members from the admin panel.
+    # SEED_DEMO_DATA is never set by the launcher scripts (run.sh / run.bat) -
+    # demo accounts are strictly opt-in (SEED_DEMO_DATA=1 before launching, or
+    # the test suite / verification scripts which set it explicitly). Deployments
+    # leave it unset and create real members from the admin panel.
     cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'member'")
     if cursor.fetchone()[0] == 0 and os.environ.get('SEED_DEMO_DATA') == '1':
         demo_members = [
