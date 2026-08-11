@@ -23,6 +23,7 @@
     injection attacks (security).
 """
 import secrets
+import json
 import csv
 import io
 import math
@@ -570,19 +571,27 @@ class GuestManager:
     """
     @staticmethod
     def get_guest_by_code(guest_code):
-        """Look up a guest pass by its code."""
+        """Look up an active guest pass by its code.
+
+        Revoked passes remain in the database for reporting, but can never be
+        used to start a new guest session.
+        """
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM guest_ids WHERE guest_code = ?", (guest_code,))
+        cursor.execute("SELECT * FROM guest_ids WHERE guest_code = ? AND status = 'active'", (guest_code,))
         guest = cursor.fetchone()
         conn.close()
         return guest
 
     @staticmethod
     def record_spending(guest_id, service_name, amount):
-        """Record spending for a guest by guest id (credits their host member)."""
+        """Record spending for an active guest pass."""
         conn = get_db()
         cursor = conn.cursor()
+        cursor.execute("SELECT id FROM guest_ids WHERE id = ? AND status = 'active'", (guest_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return False
         cursor.execute('''
             INSERT INTO guest_activities (guest_id, activity_type, service_name, transaction_value)
             VALUES (?, 'purchase', ?, ?)
@@ -614,11 +623,151 @@ class GuestManager:
         return {'id': guest_id, 'guest_code': guest_code, 'guest_name': guest_name}
 
     @staticmethod
+    def revoke_guest_pass(host_member_id, guest_id):
+        """Revoke a pass and persist an immutable activity report.
+
+        The operation runs in one write-locked transaction. Any active facility
+        session is closed first so the report includes the guest's complete
+        visit, then all activity and facility rows are snapshotted before the
+        pass is marked revoked. Repeating the request is safe and never creates
+        a second report.
+        """
+        conn = get_db()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM guest_ids
+                WHERE id = ? AND host_member_id = ?
+            """, (guest_id, host_member_id))
+            guest = cursor.fetchone()
+            if not guest:
+                conn.rollback()
+                return {'ok': False, 'message': 'Guest pass not found on your account.'}
+
+            cursor.execute("SELECT * FROM guest_pass_reports WHERE guest_id = ?", (guest_id,))
+            existing_report = cursor.fetchone()
+            if guest['status'] == 'revoked' or existing_report:
+                conn.rollback()
+                return {'ok': False, 'message': 'This guest pass has already been revoked.'}
+
+            revoked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Close active sessions before the snapshot so no usage is omitted.
+            cursor.execute("""
+                SELECT * FROM facility_checkins
+                WHERE guest_id = ? AND status = 'active'
+            """, (guest_id,))
+            active_sessions = cursor.fetchall()
+            for record in active_sessions:
+                try:
+                    in_time = datetime.strptime(record['check_in_time'], "%Y-%m-%d %H:%M:%S")
+                    out_time = datetime.strptime(revoked_at, "%Y-%m-%d %H:%M:%S")
+                    duration_mins = max(1, int((out_time - in_time).total_seconds() / 60))
+                except (TypeError, ValueError):
+                    duration_mins = 1
+
+                cursor.execute('''
+                    UPDATE facility_checkins
+                    SET check_out_time = ?, duration_minutes = ?, status = 'completed'
+                    WHERE id = ? AND status = 'active'
+                ''', (revoked_at, duration_mins, record['id']))
+                cursor.execute('''
+                    INSERT INTO guest_activities (guest_id, activity_type, service_name, transaction_value)
+                    VALUES (?, 'facility', ?, 0.0)
+                ''', (guest_id, f"Facility Use: {record['facility_name']} ({duration_mins} mins)"))
+
+            cursor.execute("""
+                SELECT * FROM guest_activities
+                WHERE guest_id = ? ORDER BY created_at ASC, id ASC
+            """, (guest_id,))
+            activities = [dict(row) for row in cursor.fetchall()]
+
+            cursor.execute("""
+                SELECT * FROM facility_checkins
+                WHERE guest_id = ? ORDER BY check_in_time ASC, id ASC
+            """, (guest_id,))
+            facility_sessions = [dict(row) for row in cursor.fetchall()]
+
+            total_spending = round(sum(
+                float(row['transaction_value'] or 0.0)
+                for row in activities if row['activity_type'] == 'purchase'
+            ), 2)
+            total_facility_minutes = sum(
+                int(row['duration_minutes'] or 0) for row in facility_sessions
+            )
+            snapshot = {
+                'activities': activities,
+                'facility_sessions': facility_sessions,
+                'summary': {
+                    'activity_count': len(activities),
+                    'total_spending': total_spending,
+                    'total_facility_minutes': total_facility_minutes,
+                },
+            }
+
+            cursor.execute('''
+                INSERT INTO guest_pass_reports (
+                    guest_id, host_member_id, guest_code, guest_name, issued_at,
+                    revoked_at, activity_count, total_spending,
+                    total_facility_minutes, activity_snapshot
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                guest_id, guest['host_member_id'], guest['guest_code'], guest['guest_name'],
+                guest['created_at'], revoked_at, len(activities), total_spending,
+                total_facility_minutes, json.dumps(snapshot, separators=(',', ':'))
+            ))
+            report_id = cursor.lastrowid
+
+            cursor.execute("""
+                UPDATE guest_ids SET status = 'revoked', revoked_at = ?
+                WHERE id = ? AND status = 'active'
+            """, (revoked_at, guest_id))
+            conn.commit()
+            return {
+                'ok': True,
+                'report_id': report_id,
+                'guest_name': guest['guest_name'],
+                'activity_count': len(activities),
+                'total_spending': total_spending,
+                'total_facility_minutes': total_facility_minutes,
+            }
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_guest_report(host_member_id, guest_id):
+        """Return a host member's immutable guest-pass report, if available."""
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM guest_pass_reports
+            WHERE host_member_id = ? AND guest_id = ?
+        ''', (host_member_id, guest_id))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+
+        report = dict(row)
+        try:
+            snapshot = json.loads(report['activity_snapshot'])
+        except (TypeError, ValueError):
+            snapshot = {'activities': [], 'facility_sessions': [], 'summary': {}}
+        report['activities'] = snapshot.get('activities', [])
+        report['facility_sessions'] = snapshot.get('facility_sessions', [])
+        report['summary'] = snapshot.get('summary', {})
+        return report
+
+    @staticmethod
     def record_guest_spending(guest_code, service_name, amount):
         """Record spending by a guest using their guest ID code."""
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM guest_ids WHERE guest_code = ?", (guest_code,))
+        cursor.execute("SELECT * FROM guest_ids WHERE guest_code = ? AND status = 'active'", (guest_code,))
         guest = cursor.fetchone()
         
         if not guest:

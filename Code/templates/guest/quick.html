@@ -1,10 +1,69 @@
 {% extends "base.html" %}
 
-{% block title %}Quick Guest Check-In & Purchase - FairShare{% endblock %}
+{% block title %}{% if share_guest %}Guest Pass - {{ share_guest.guest_name }}{% else %}Quick Guest Check-In & Purchase - FairShare{% endif %}{% endblock %}
 
 {% block content %}
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
+{% if share_guest %}
+<div style="max-width: 760px; margin: 2.5rem auto; position: relative;">
+  <div class="card guest-quick-card" style="padding: 2.25rem;">
+    <div style="text-align: left; margin-bottom: 1.5rem;">
+      <span class="badge badge-blue" style="margin-bottom: 0.75rem;">Guest Day Pass</span>
+      <h1 style="font-size: 2rem; margin-bottom: 0.4rem;">Welcome, {{ share_guest.guest_name }}!</h1>
+      <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.65;">This page has everything you need to access FairShare during your visit.</p>
+    </div>
+
+    <div class="grid grid-cols-2" style="gap: 1.25rem; margin-bottom: 1.5rem;">
+      <div style="background: var(--secondary); color: var(--on-secondary); border: 4px solid var(--ink); padding: 1.25rem;">
+        <span style="display: block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85;">Your Guest Pass Code</span>
+        <code style="display: inline-block; margin-top: 0.6rem; font-size: 1.15rem; background: var(--on-secondary); color: var(--ink);">{{ share_guest.guest_code }}</code>
+        <p style="font-size: 0.78rem; margin-top: 0.75rem;">Hosted by {{ share_host.full_name }}.</p>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: center; background: var(--surface-hi); border: 4px solid var(--ink); padding: 1rem;">
+        <div data-qr="{{ share_guest.guest_code }}" data-qr-width="150" aria-label="Guest pass QR code"></div>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+      <a href="{{ login_url }}" class="btn btn-primary" style="flex: 1; min-width: 210px; text-align: center;">Guest Sign In &rarr;</a>
+      <button type="button" id="copy-guest-pass-code" class="btn btn-secondary" data-copy-value="{{ share_guest.guest_code }}" style="flex: 1; min-width: 210px;">Copy Pass Code</button>
+    </div>
+
+    <div style="background: var(--tertiary-soft); border: 4px solid var(--ink); padding: 1.25rem; margin-bottom: 1.5rem;">
+      <h3 style="font-size: 1.05rem; margin-bottom: 0.6rem;">How to use your pass</h3>
+      <ol style="padding-left: 1.25rem; color: var(--ink); font-size: 0.88rem;">
+        <li>Open <strong>Guest Sign In</strong> and enter or scan the pass code.</li>
+        <li>Use the guest dashboard to check in and out of facilities.</li>
+        <li>Record purchases or scan receipt QR codes so activity is credited to your host.</li>
+      </ol>
+      <p style="color: var(--text-muted); font-size: 0.78rem; margin-top: 0.75rem;">This day pass is valid today and expires at midnight.</p>
+    </div>
+
+    <div style="margin-bottom: 1.5rem;">
+      <h3 style="font-size: 1.05rem; margin-bottom: 0.7rem;">Available facilities</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.65rem;">
+        {% for code, name in facilities.items() %}
+          <div style="border: 3px solid var(--ink); padding: 0.65rem 0.75rem; background: var(--surface-dim);">
+            <strong style="display: block; font-size: 0.82rem;">{{ name }}</strong>
+            <code style="font-size: 0.68rem;">{{ code }}</code>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div style="border-top: 3px solid var(--ink); padding-top: 1rem;">
+      <label class="form-label" for="guest-share-url">Share this guest pass page</label>
+      <div style="display: flex; gap: 0.6rem; margin-top: 0.4rem; flex-wrap: wrap;">
+        <input id="guest-share-url" class="form-control" value="{{ share_url }}" readonly style="flex: 1; min-width: 220px; font-size: 0.78rem;">
+        <button type="button" id="copy-guest-share" class="btn btn-ghost btn-sm" data-copy-value="{{ share_url }}">Copy Link</button>
+        <button type="button" id="native-share-guest-pass" class="btn btn-ghost btn-sm" data-share-url="{{ share_url }}" data-share-title="{{ share_guest.guest_name }}'s FairShare Guest Pass">Share</button>
+      </div>
+      <p id="guest-share-status" style="color: var(--text-dim); font-size: 0.75rem; margin-top: 0.45rem;" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+</div>
+{% else %}
 <div style="max-width: 560px; margin: 2.5rem auto; position: relative;">
   <div class="card guest-quick-card">
     <div style="text-align: left; margin-bottom: 1.75rem;">
@@ -57,4 +116,5 @@
     </p>
   </div>
 </div>
+{% endif %}
 {% endblock %}

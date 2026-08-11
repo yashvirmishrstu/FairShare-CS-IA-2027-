@@ -199,14 +199,32 @@
       </div>
 
       {% if guests %}
-        <div style="flex-shrink: 0; min-width: 200px; max-height: 200px; overflow-y: auto; font-size: 0.8rem;">
+        <div style="flex-shrink: 0; min-width: 270px; max-height: 240px; overflow-y: auto; font-size: 0.8rem;">
           <span style="font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.65rem; opacity: 0.85;">Your Guest Passes</span>
-          {% for g in guests[:3] %}
+          {% for g in guests %}
             <div style="display: flex; align-items: center; gap: 0.6rem; border-bottom: 2px solid var(--border-glass); padding: 0.5rem 0;">
-              <div class="guest-pass-qr" style="background: var(--on-secondary);"><div data-qr="{{ g.guest_code }}" data-qr-width="48"></div></div>
+              {% if g.status == 'active' %}
+                <div class="guest-pass-qr" style="background: var(--on-secondary);"><div data-qr="{{ g.guest_code }}" data-qr-width="48"></div></div>
+              {% else %}
+                <div style="width: 54px; height: 54px; display: grid; place-items: center; background: var(--ink); color: var(--on-secondary); border: 2px solid var(--border-glass); font-size: 0.55rem; font-weight: 900; text-align: center;">PASS<br>ENDED</div>
+              {% endif %}
               <div style="flex: 1; min-width: 0;">
                 <p style="font-weight: 700; text-transform: uppercase; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ g.guest_name }}</p>
                 <code style="font-size: 0.68rem; color: var(--ink);">{{ g.guest_code }}</code>
+                {% if g.status == 'active' %}
+                  <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.3rem;">
+                    <a href="{{ url_for('guest_pass_share', guest_code=g.guest_code) }}" target="_blank" rel="noopener" class="btn btn-sm" style="background: var(--on-secondary); color: var(--secondary); border-color: var(--border-glass); padding: 0.2rem 0.5rem; font-size: 0.62rem;">Share Page</a>
+                  </div>
+                  <form action="{{ url_for('member_guest_revoke', guest_id=g.id) }}" method="POST" style="margin-top: 0.3rem;" onsubmit="return confirm('End this guest pass and archive its activity report?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm" style="background: var(--on-primary); color: var(--primary); border-color: var(--border-glass); padding: 0.2rem 0.5rem; font-size: 0.62rem;">Kill Pass</button>
+                  </form>
+                {% elif g.report_id %}
+                  <div style="margin-top: 0.3rem; display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                    <span class="badge badge-black" style="font-size: 0.55rem; padding: 0.12rem 0.35rem;">Revoked</span>
+                    <a href="{{ url_for('member_guest_report', guest_id=g.id) }}" style="color: var(--on-secondary); font-size: 0.65rem; font-weight: 800; text-transform: uppercase;">View Report &rarr;</a>
+                  </div>
+                {% endif %}
               </div>
             </div>
           {% endfor %}

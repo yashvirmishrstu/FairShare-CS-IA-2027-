@@ -142,10 +142,21 @@ def guest_required(f):
     def decorated_function(*args, **kwargs):
         guest_id = session.get('guest_id')
         today = datetime.now().strftime('%Y-%m-%d')
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM guest_ids WHERE id = ?", (guest_id,))
+        guest = cursor.fetchone() if guest_id else None
+        conn.close()
+
         if not guest_id or session.get('guest_login_date') != today:
             session.pop('guest_id', None)
             session.pop('guest_login_date', None)
             flash('Your guest day pass has expired. Please sign in again.', 'warning')
+            return redirect(url_for('login', tab='guest'))
+        if not guest or guest['status'] != 'active':
+            session.pop('guest_id', None)
+            session.pop('guest_login_date', None)
+            flash('This guest pass has been revoked. Your activity report has been saved.', 'warning')
             return redirect(url_for('login', tab='guest'))
         return f(*args, **kwargs)
     return decorated_function
@@ -179,6 +190,30 @@ def inject_user():
     return dict(current_user=user, current_member=member, current_guest=guest)
 
 # Public Routes
+@app.route('/guest/pass/<guest_code>')
+def guest_pass_share(guest_code):
+    """Show the active guest pass information page that can be shared."""
+    guest = GuestManager.get_guest_by_code(guest_code.strip().upper())
+    if not guest:
+        flash('This guest pass is invalid or has been revoked.', 'warning')
+        return redirect(url_for('login', tab='guest'))
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT full_name, member_code FROM members WHERE id = ?", (guest['host_member_id'],))
+    host = cursor.fetchone()
+    conn.close()
+
+    return render_template(
+        'guest/quick.html',
+        share_guest=guest,
+        share_host=host,
+        facilities=FACILITIES,
+        login_url=url_for('login', tab='guest', _external=True),
+        share_url=url_for('guest_pass_share', guest_code=guest['guest_code'], _external=True),
+    )
+
+
 @app.route('/')
 def index():
     if 'user_id' in session:
@@ -249,7 +284,7 @@ def guest_dashboard():
     """Guest day portal: facility barcode scanner, purchases, and activity tracking."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM guest_ids WHERE id = ?", (session['guest_id'],))
+    cursor.execute("SELECT * FROM guest_ids WHERE id = ? AND status = 'active'", (session['guest_id'],))
     guest = cursor.fetchone()
 
     if not guest:
@@ -302,7 +337,7 @@ def guest_scan():
     """Facility barcode scanner for guests: first scan checks in, second checks out."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM guest_ids WHERE id = ?", (session['guest_id'],))
+    cursor.execute("SELECT * FROM guest_ids WHERE id = ? AND status = 'active'", (session['guest_id'],))
     guest = cursor.fetchone()
 
     facility_code = request.form.get('facility_code', '').strip().upper()
@@ -525,8 +560,15 @@ def member_dashboard():
     ''', (member['id'],))
     active_checkin = cursor.fetchone()
 
-    # Hosted guest IDs
-    cursor.execute("SELECT * FROM guest_ids WHERE host_member_id = ? ORDER BY created_at DESC", (member['id'],))
+    # Hosted guest IDs, including the final report summary after revocation
+    cursor.execute('''
+        SELECT g.*, r.id AS report_id, r.revoked_at AS report_revoked_at,
+               r.activity_count, r.total_spending, r.total_facility_minutes
+        FROM guest_ids g
+        LEFT JOIN guest_pass_reports r ON r.guest_id = g.id
+        WHERE g.host_member_id = ?
+        ORDER BY g.created_at DESC
+    ''', (member['id'],))
     guests = cursor.fetchall()
 
     conn.close()
@@ -730,7 +772,7 @@ def guest_receipt_scan():
     credited to their host member's rewards."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM guest_ids WHERE id = ?", (session['guest_id'],))
+    cursor.execute("SELECT * FROM guest_ids WHERE id = ? AND status = 'active'", (session['guest_id'],))
     guest = cursor.fetchone()
     conn.close()
 
@@ -813,7 +855,54 @@ def member_guest_create():
     pts = int(round(settings['referral_weight']))
     flash(f'Guest ID Created! Pass Code: {result["guest_code"]} — +{pts} pts earned!', 'success')
     conn.close()
+    return redirect(url_for('guest_pass_share', guest_code=result['guest_code']))
+
+@app.route('/member/guest/revoke/<int:guest_id>', methods=['POST'])
+@login_required
+def member_guest_revoke(guest_id):
+    """Revoke one of the current member's guest passes and archive its report."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+    conn.close()
+
+    if not member:
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
+    result = GuestManager.revoke_guest_pass(member['id'], guest_id)
+    if result['ok']:
+        flash(
+            f"Guest pass for {result['guest_name']} revoked. "
+            f"{result['activity_count']} activities archived in the report.",
+            'success'
+        )
+    else:
+        flash(result['message'], 'warning')
     return redirect(url_for('member_dashboard'))
+
+
+@app.route('/member/guest/report/<int:guest_id>')
+@login_required
+def member_guest_report(guest_id):
+    """Display the immutable report created when a guest pass was revoked."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM members WHERE user_id = ?", (session['user_id'],))
+    member = cursor.fetchone()
+    conn.close()
+
+    if not member:
+        flash('Member profile not found.', 'danger')
+        return redirect(url_for('index'))
+
+    report = GuestManager.get_guest_report(member['id'], guest_id)
+    if not report:
+        flash('Guest activity report not found.', 'warning')
+        return redirect(url_for('member_dashboard'))
+    return render_template('member/activity.html', guest_report=report)
+
 
 @app.route('/guest/spending', methods=['POST'])
 @guest_required
@@ -831,7 +920,7 @@ def guest_spending():
 
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM guest_ids WHERE id = ?", (session['guest_id'],))
+    cursor.execute("SELECT id FROM guest_ids WHERE id = ? AND status = 'active'", (session['guest_id'],))
     guest = cursor.fetchone()
     conn.close()
 

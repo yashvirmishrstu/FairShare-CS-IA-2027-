@@ -120,6 +120,8 @@ def init_db():
             guest_code TEXT UNIQUE NOT NULL,
             guest_name TEXT NOT NULL,
             host_member_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'revoked')),
+            revoked_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (host_member_id) REFERENCES members (id) ON DELETE CASCADE
         );
@@ -132,6 +134,22 @@ def init_db():
             transaction_value REAL DEFAULT 0.0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (guest_id) REFERENCES guest_ids (id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS guest_pass_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guest_id INTEGER UNIQUE NOT NULL,
+            host_member_id INTEGER NOT NULL,
+            guest_code TEXT NOT NULL,
+            guest_name TEXT NOT NULL,
+            issued_at TIMESTAMP NOT NULL,
+            revoked_at TIMESTAMP NOT NULL,
+            activity_count INTEGER NOT NULL DEFAULT 0,
+            total_spending REAL NOT NULL DEFAULT 0.0,
+            total_facility_minutes INTEGER NOT NULL DEFAULT 0,
+            activity_snapshot TEXT NOT NULL DEFAULT '[]',
+            FOREIGN KEY (guest_id) REFERENCES guest_ids (id) ON DELETE RESTRICT,
+            FOREIGN KEY (host_member_id) REFERENCES members (id) ON DELETE RESTRICT
         );
 
         CREATE TABLE IF NOT EXISTS reward_settings (
@@ -227,7 +245,15 @@ def init_db():
     if 'guest_id' not in checkin_cols:
         cursor.execute("ALTER TABLE facility_checkins ADD COLUMN guest_id INTEGER REFERENCES guest_ids(id) ON DELETE CASCADE")
 
-    # Migration: add facility/loyalty/tier scoring columns to reward_settings (existing databases)
+    # Migration: add revocation state to existing guest passes
+    cursor.execute("PRAGMA table_info(guest_ids)")
+    guest_cols = [row[1] for row in cursor.fetchall()]
+    if 'status' not in guest_cols:
+        cursor.execute("ALTER TABLE guest_ids ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    if 'revoked_at' not in guest_cols:
+        cursor.execute("ALTER TABLE guest_ids ADD COLUMN revoked_at TIMESTAMP")
+
+    # Migration: add facility/loyalty/tier scoring columns to reward_settings
     cursor.execute("PRAGMA table_info(reward_settings)")
     settings_cols = [row[1] for row in cursor.fetchall()]
     if 'facility_weight' not in settings_cols:

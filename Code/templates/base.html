@@ -6,12 +6,15 @@
   <title>{% block title %}FairShare - Personalized Rewards & Profit Sharing{% endblock %}</title>
 
   <!-- CSS Styles -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=5">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=8">
 
   <!-- Typefaces: Outfit (light) · Archivo Narrow + Hanken Grotesk + JetBrains Mono (noir dark) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Archivo+Narrow:wght@500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+  <!-- Keep the page usable if JavaScript is disabled and cannot dismiss the loader. -->
+  <noscript><style>.page-loader { display: none !important; }</style></noscript>
 
   <!-- Fast JS Libraries from CDN for Barcode, QR Code, and Analytics -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
@@ -19,6 +22,17 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
+
+  <!-- Global loading layer: shown during initial loads and same-origin navigation. -->
+  <div id="page-loader" class="page-loader" role="status" aria-live="polite" aria-label="Loading FairShare">
+    <div class="page-loader-inner">
+      <div class="page-loader-mark" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="page-loader-track" aria-hidden="true"><span></span></div>
+      <p>Loading FairShare<span class="page-loader-dots" aria-hidden="true">...</span></p>
+    </div>
+  </div>
 
   <!-- Navigation Bar -->
   <nav class="navbar">
@@ -95,6 +109,6 @@
   </main>
   
   <!-- App Interactive JavaScript -->
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=6"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=9"></script>
 </body>
 </html>

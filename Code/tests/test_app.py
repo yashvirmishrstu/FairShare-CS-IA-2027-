@@ -1,6 +1,7 @@
 import pytest
 import os
 import re
+import json
 from main import app
 from database import init_db, get_db
 from models import EngagementEngine, RewardSettings, MarketplaceManager
@@ -20,6 +21,23 @@ def test_home_page(client):
     response = client.get('/')
     assert response.status_code == 200
     assert b'FairShare' in response.data
+
+
+def test_login_page_has_guest_signin_panel(client):
+    """The unified login page exposes a separate guest pass sign-in section."""
+    account_page = client.get('/login')
+    assert account_page.status_code == 200
+    assert b'Member / Admin' in account_page.data
+    assert b'Guest Pass' in account_page.data
+    assert b'Guest Sign In' in account_page.data
+    assert b'id="guest-login-form"' in account_page.data
+
+    guest_page = client.get('/login?tab=guest')
+    assert guest_page.status_code == 200
+    assert b'Enter as Guest' in guest_page.data
+    assert b'Scan Guest Pass QR' in guest_page.data
+    assert b'autofocus' in guest_page.data
+
 
 def test_csrf_protection_active_and_token_present(client):
     """VULN-002: with CSRF enabled, a tokenless POST is rejected (HTTP 400)
@@ -105,6 +123,30 @@ def test_guest_dashboard_requires_signin(client):
     response = client.get('/guest/dashboard', follow_redirects=True)
     assert b'Sign In' in response.data
     assert b'Sign In' in response.data
+
+def test_guest_pass_share_page_contains_login_information(client):
+    """Creating a pass redirects to a shareable page with the code, QR, login
+    link, host details, and facility instructions."""
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    response = client.post('/member/guest/create', data={'guest_name': 'Share Visitor'}, follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Share this guest pass page' in response.data
+    assert b'Guest Sign In' in response.data
+    assert b'Available facilities' in response.data
+    assert b'Copy Pass Code' in response.data
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT guest_code FROM guest_ids WHERE guest_name = 'Share Visitor' ORDER BY id DESC LIMIT 1")
+    guest_code = cursor.fetchone()['guest_code']
+    conn.close()
+
+    public_page = client.get(f'/guest/pass/{guest_code}')
+    assert public_page.status_code == 200
+    assert guest_code.encode() in public_page.data
+    assert b'/login?tab=guest' in public_page.data
+    assert b'FAC-101' in public_page.data
+
 
 def test_guest_day_pass_login_and_tracking(client):
     # Alice creates a guest pass for her guest
@@ -262,6 +304,70 @@ def test_member_login_clears_prior_guest_session(client):
     assert b'Welcome back, alice!' in response.data
     assert b'Member Dashboard' in response.data
     assert b'Guest Day Pass' not in response.data
+
+def test_member_can_revoke_guest_pass_and_archive_report(client):
+    """Revoking a hosted pass closes active sessions, snapshots all guest
+    activity, and prevents the code from being used again."""
+    # Alice creates the pass.
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    client.post('/member/guest/create', data={'guest_name': 'Report Guest'}, follow_redirects=True)
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, guest_code, host_member_id FROM guest_ids WHERE guest_name = 'Report Guest' ORDER BY id DESC LIMIT 1")
+    guest = cursor.fetchone()
+    conn.close()
+
+    # A different member cannot revoke Alice's pass.
+    client.get('/logout')
+    client.post('/login', data={'username': 'bob', 'password': 'password123'}, follow_redirects=True)
+    unauthorized = client.post(f"/member/guest/revoke/{guest['id']}", follow_redirects=True)
+    assert b'Guest pass not found on your account' in unauthorized.data
+
+    # The guest uses the pass, leaves an open facility session, and records a purchase.
+    client.get('/logout')
+    client.post('/login', data={'guest_code': guest['guest_code']}, follow_redirects=True)
+    client.post('/guest/scan', data={'facility_code': 'FAC-101'}, follow_redirects=True)
+    client.post('/guest/spending', data={'service_name': 'Report Lunch', 'amount': '12.50'}, follow_redirects=True)
+    client.post('/guest/logout', follow_redirects=True)
+
+    # Alice revokes it and receives a report link.
+    client.post('/login', data={'username': 'alice', 'password': 'password123'}, follow_redirects=True)
+    response = client.post(f"/member/guest/revoke/{guest['id']}", follow_redirects=True)
+    assert response.status_code == 200
+    assert b'Guest pass for Report Guest revoked' in response.data
+    assert b'View Report' in response.data
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT status, revoked_at FROM guest_ids WHERE id = ?", (guest['id'],))
+    pass_row = cursor.fetchone()
+    assert pass_row['status'] == 'revoked'
+    assert pass_row['revoked_at']
+    cursor.execute("SELECT * FROM guest_pass_reports WHERE guest_id = ?", (guest['id'],))
+    report = cursor.fetchone()
+    assert report is not None
+    assert report['activity_count'] == 2  # purchase + auto-closed facility session
+    assert report['total_spending'] == 12.50
+    assert report['total_facility_minutes'] >= 1
+    snapshot = json.loads(report['activity_snapshot'])
+    assert len(snapshot['activities']) == 2
+    cursor.execute("SELECT status FROM facility_checkins WHERE guest_id = ?", (guest['id'],))
+    assert cursor.fetchone()['status'] == 'completed'
+    conn.close()
+
+    # The host can open the archived report.
+    report_response = client.get(f"/member/guest/report/{guest['id']}")
+    assert report_response.status_code == 200
+    assert b'Archived Guest Report' in report_response.data
+    assert b'Report Lunch' in report_response.data
+    assert b'Facility Sessions' in report_response.data
+
+    # The revoked code cannot start another guest session.
+    client.get('/logout')
+    response = client.post('/login', data={'guest_code': guest['guest_code']}, follow_redirects=True)
+    assert b'Invalid Guest Pass Code' in response.data
+
 
 def test_guest_day_pass_expires_next_day(client):
     # Create pass and sign in as the guest

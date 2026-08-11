@@ -72,6 +72,126 @@ body {
   overflow-x: clip;
 }
 
+/* ------------------------------------------------------------
+   Global loading feedback — initial loads and page transitions
+   ------------------------------------------------------------ */
+.page-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--ink);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+
+body.page-ready .page-loader {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.page-loader-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  min-width: 220px;
+  text-align: center;
+}
+
+.page-loader-mark {
+  position: relative;
+  width: 68px;
+  height: 68px;
+}
+
+.page-loader-mark span {
+  position: absolute;
+  display: block;
+}
+
+.page-loader-mark span:nth-child(1) {
+  inset: 0;
+  border: 5px solid var(--ink);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: pageLoaderSpin 0.9s linear infinite;
+}
+
+.page-loader-mark span:nth-child(2) {
+  inset: 10px;
+  border: 5px solid var(--ink);
+  border-right-color: var(--secondary);
+  border-radius: 50%;
+  animation: pageLoaderSpin 1.2s linear infinite reverse;
+}
+
+.page-loader-mark span:nth-child(3) {
+  width: 14px;
+  height: 14px;
+  top: 27px;
+  left: 27px;
+  background: var(--tertiary);
+  border: 3px solid var(--ink);
+  animation: pageLoaderPulse 0.8s ease-in-out infinite alternate;
+}
+
+.page-loader-track {
+  width: 220px;
+  height: 6px;
+  overflow: hidden;
+  background: var(--ink);
+  border: 2px solid var(--ink);
+}
+
+.page-loader-track span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  background: var(--primary);
+  animation: pageLoaderSweep 1.1s ease-in-out infinite;
+}
+
+.page-loader-inner p {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page-loader-dots {
+  display: inline-block;
+  width: 1.5em;
+  overflow: hidden;
+  text-align: left;
+  animation: pageLoaderDots 1.1s steps(4, end) infinite;
+}
+
+@keyframes pageLoaderSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pageLoaderPulse {
+  from { transform: scale(0.65) rotate(0deg); }
+  to { transform: scale(1.15) rotate(45deg); }
+}
+
+@keyframes pageLoaderSweep {
+  0% { transform: translateX(-110%); }
+  50%, 100% { transform: translateX(530%); }
+}
+
+@keyframes pageLoaderDots {
+  0%, 20% { width: 0; }
+  40% { width: 0.5em; }
+  60% { width: 1em; }
+  80%, 100% { width: 1.5em; }
+}
+
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Outfit', sans-serif;
   font-weight: 800;
@@ -478,6 +598,15 @@ code {
 .points-feed-value-emerald { color: var(--tertiary); }
 .points-feed-value-amber { color: var(--accent-amber); }
 
+/* Ledger changes — green for points gained, red for points spent. */
+.points-ledger-value {
+  font-weight: 900;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+.points-ledger-positive { color: #157347; }
+.points-ledger-negative { color: var(--primary); }
+
 /* Breakdown row on stat cards — sources that built the total */
 .stat-breakdown {
   display: flex;
@@ -497,6 +626,7 @@ code {
    Buttons — square, 4px border, hard shadow, press-in
    ------------------------------------------------------------ */
 .btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -555,6 +685,31 @@ code {
 .btn-ghost:hover { background: var(--tertiary-soft); color: var(--ink); }
 
 .btn-sm { padding: 0.35rem 0.85rem; font-size: 0.75rem; }
+
+/* Submit feedback keeps the clicked control responsive while navigation starts. */
+.btn.is-loading {
+  pointer-events: none;
+  cursor: wait;
+  color: transparent !important;
+}
+
+.btn.is-loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1rem;
+  height: 1rem;
+  margin: -0.5rem;
+  border: 3px solid var(--ink);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: buttonLoaderSpin 0.65s linear infinite;
+}
+
+@keyframes buttonLoaderSpin {
+  to { transform: rotate(360deg); }
+}
 
 /* ------------------------------------------------------------
    Forms — sharp 0px corners, 4px borders, yellow focus
@@ -668,6 +823,50 @@ select.form-control { appearance: auto; }
 .alert-danger  { background: #ffdad6; color: #93000a; }
 .alert-warning { background: var(--tertiary-soft); color: var(--ink); }
 .alert-info    { background: #dde1ff; color: #001452; }
+
+/* State-change feedback — success only, so failed scans/claims stay still. */
+@keyframes actionAlertIn {
+  0%   { opacity: 0; transform: translateY(-10px) scale(0.97); }
+  55%  { opacity: 1; transform: translateY(2px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.alert-action-claim,
+.alert-action-checkin {
+  gap: 0.75rem;
+  animation: actionAlertIn 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+.alert-action-claim { background: #d9f5e5; color: #14532d; }
+.alert-action-checkin { background: #dde1ff; color: #001452; }
+.alert-action-claim::before {
+  content: '✓';
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  flex: 0 0 1.7rem;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  font-size: 1rem;
+  font-weight: 900;
+  animation: actionIconPop 0.6s 0.15s both;
+}
+.alert-action-checkin::before {
+  content: '●';
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  flex: 0 0 1.7rem;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  animation: actionIconPop 0.6s 0.15s both;
+}
+@keyframes actionIconPop {
+  0%   { opacity: 0; transform: scale(0.2) rotate(-20deg); }
+  70%  { opacity: 1; transform: scale(1.15) rotate(4deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
 
 /* ------------------------------------------------------------
    Footer — identity bar
@@ -1095,6 +1294,8 @@ footer {
 .dash-stats   { animation: fadeIn 0.7s ease-out 0.1s both; }
 .dash-points  { animation: fadeInDown 0.7s ease-out 0.2s both; }
 .dash-cta-red    { animation: slideUp 0.7s ease-out 0.3s both; }
+/* Keep the red scanner CTA's text colour stable when the link is hovered. */
+.dash-cta-red:hover { color: var(--on-primary); }
 .dash-cta-yellow { animation: slideUp 0.7s ease-out 0.4s both; }
 .dash-cta-blue   { animation: slideUp 0.7s ease-out 0.5s both; }
 .dash-table  { animation: fadeIn 0.7s ease-out 0.6s both; }
@@ -1145,6 +1346,8 @@ footer {
   animation: pointsPopIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
   transform: rotate(-2deg);
 }
+.points-toast-inner.points-toast-positive { background: #157347; }
+.points-toast-inner.points-toast-negative { background: var(--primary); }
 .points-toast-inner.fade-out {
   animation: pointsFadeOut 0.4s ease-out forwards;
 }
@@ -1386,4 +1589,57 @@ footer {
   transform: none;
   box-shadow: 4px 4px 0 0 var(--shadow-color);
   border-color: var(--border-glass);
+}
+
+@keyframes couponClaimPop {
+  0%   { opacity: 0.45; transform: scale(0.96) rotate(-1deg); box-shadow: 4px 4px 0 0 var(--shadow-color); }
+  55%  { opacity: 1; transform: scale(1.03) rotate(1deg); box-shadow: 10px 10px 0 0 var(--shadow-color); }
+  100% { opacity: 1; transform: scale(1) rotate(0); box-shadow: var(--shadow-subtle); }
+}
+.claimed-coupon-card.coupon-claimed-pop {
+  border-color: #157347 !important;
+  animation: couponClaimPop 0.95s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+.coupon-card.coupon-claim-target {
+  border-color: #157347 !important;
+  animation: couponClaimPop 1.05s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+/* Facility check-in feedback — the active session arrives with a small burst. */
+@keyframes sessionStartIn {
+  0%   { opacity: 0; transform: translateY(-12px) scale(0.98); box-shadow: 4px 4px 0 0 var(--shadow-color); }
+  55%  { opacity: 1; transform: translateY(2px) scale(1.01); box-shadow: 8px 8px 0 0 var(--shadow-color); }
+  100% { opacity: 1; transform: translateY(0) scale(1); box-shadow: 4px 4px 0 0 var(--shadow-color); }
+}
+@keyframes checkInPulse {
+  0%   { transform: scale(0.75); box-shadow: 0 0 0 0 rgba(40, 80, 206, 0.65); }
+  65%  { transform: scale(1.25); box-shadow: 0 0 0 14px rgba(40, 80, 206, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(40, 80, 206, 0); }
+}
+.session-active.session-started {
+  animation: sessionStartIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+.session-active.session-started .pulse-dot {
+  animation: checkInPulse 1.1s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-loader-mark span,
+  .page-loader-track span,
+  .page-loader-dots,
+  .btn.is-loading::after {
+    animation: none;
+  }
+  .page-loader-track span { width: 100%; }
+
+  .alert-action-claim,
+  .alert-action-checkin,
+  .alert-action-claim::before,
+  .alert-action-checkin::before,
+  .claimed-coupon-card.coupon-claimed-pop,
+  .coupon-card.coupon-claim-target,
+  .session-active.session-started,
+  .session-active.session-started .pulse-dot {
+    animation: none;
+  }
 }

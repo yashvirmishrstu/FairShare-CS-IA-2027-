@@ -1,8 +1,43 @@
 {% extends "base.html" %}
 
-{% block title %}Activity & Check-In Log - FairShare{% endblock %}
+{% block title %}{% if guest_report %}Guest Activity Report - {{ guest_report.guest_name }}{% else %}Activity & Check-In Log - FairShare{% endif %}{% endblock %}
 
 {% block content %}
+{% if guest_report %}
+<div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem;">
+  <div>
+    <span class="badge badge-black" style="margin-bottom: 0.5rem;">Archived Guest Report</span>
+    <h1>{{ guest_report.guest_name }}</h1>
+    <p style="color: var(--text-muted);">Pass <code>{{ guest_report.guest_code }}</code> was revoked on {{ guest_report.revoked_at }}.</p>
+  </div>
+  <a href="{{ url_for('member_dashboard') }}" class="btn btn-secondary btn-sm">Back to Dashboard</a>
+</div>
+
+<div class="grid grid-cols-3" style="margin-bottom: 2rem;">
+  <div class="card stat-card blue"><span class="stat-label">Logged Activities</span><span class="stat-value">{{ guest_report.activity_count }}</span><span class="stat-desc">Preserved in the final report</span></div>
+  <div class="card stat-card emerald"><span class="stat-label">Guest Spending</span><span class="stat-value">${{ "%.2f"|format(guest_report.total_spending) }}</span><span class="stat-desc">Credited to your rewards</span></div>
+  <div class="card stat-card purple"><span class="stat-label">Facility Time</span><span class="stat-value">{{ guest_report.total_facility_minutes }}</span><span class="stat-desc">Minutes across all sessions</span></div>
+</div>
+
+<div class="card" style="margin-bottom: 2rem;">
+  <h3>Complete Activity Log</h3>
+  <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0.25rem 0 1rem;">This snapshot was created before the pass was disabled. Issued {{ guest_report.issued_at }}.</p>
+  <div class="table-container"><table class="table"><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Value</th></tr></thead><tbody>
+    {% for activity in guest_report.activities %}
+      <tr><td>{{ activity.created_at }}</td><td>{% if activity.activity_type == 'purchase' %}<span class="badge badge-emerald">Purchase</span>{% else %}<span class="badge badge-blue">Facility</span>{% endif %}</td><td>{{ activity.service_name }}</td><td>${{ "%.2f"|format(activity.transaction_value or 0) }}</td></tr>
+    {% else %}<tr><td colspan="4" style="text-align:center; color: var(--text-dim);">No activity was recorded for this pass.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+
+<div class="card" style="margin-bottom: 2rem;">
+  <h3>Facility Sessions</h3>
+  <div class="table-container" style="margin-top: 1rem;"><table class="table"><thead><tr><th>Facility</th><th>Check In</th><th>Check Out</th><th>Duration</th></tr></thead><tbody>
+    {% for facility_session in guest_report.facility_sessions %}
+      <tr><td>{{ facility_session.facility_name }}</td><td>{{ facility_session.check_in_time }}</td><td>{{ facility_session.check_out_time or '—' }}</td><td><span class="badge badge-emerald">{{ facility_session.duration_minutes }} mins</span></td></tr>
+    {% else %}<tr><td colspan="4" style="text-align:center; color: var(--text-dim);">No facility sessions were recorded.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% else %}
 <div style="margin-bottom: 2rem;">
   <h1>My Activity & Check-In History</h1>
   <p style="color: var(--text-muted);">View your visits, purchases, and facility session history. All activity is recorded automatically.</p>
@@ -95,4 +130,5 @@
     </table>
   </div>
 </div>
+{% endif %}
 {% endblock %}

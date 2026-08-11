@@ -111,7 +111,7 @@
     {% if my_coupons %}
       <div style="display: grid; gap: 1rem;">
         {% for mc in my_coupons %}
-          <div style="display: flex; align-items: center; gap: 1rem; background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 0.9rem;">
+          <div class="claimed-coupon-card" style="display: flex; align-items: center; gap: 1rem; background: var(--surface-dim); border: 3px solid var(--border-glass); padding: 0.9rem;">
             <div style="background: #fff; border: 3px solid var(--border-glass); padding: 0.35rem; flex-shrink: 0;">
               <div data-qr="{{ mc.coupon_code }}" data-qr-width="72"></div>
             </div>
@@ -149,7 +149,11 @@
               <p style="font-weight: 700; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.reason }}</p>
               <p style="font-size: 0.7rem; color: var(--text-muted);">{{ t.created_at[:10] }} &middot; {{ t.created_at[11:16] }}</p>
             </div>
-            <span style="font-weight: 900; font-size: 0.95rem; color: var(--primary); flex-shrink: 0;">&minus;{{ "%.0f"|format(-t.points_delta) }} pts</span>
+            {% if t.points_delta >= 0 %}
+              <span class="points-ledger-value points-ledger-positive">+{{ "%.0f"|format(t.points_delta) }} pts</span>
+            {% else %}
+              <span class="points-ledger-value points-ledger-negative">&minus;{{ "%.0f"|format(-t.points_delta) }} pts</span>
+            {% endif %}
           </div>
         {% endfor %}
       </div>

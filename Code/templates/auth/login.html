@@ -2,8 +2,8 @@
    IB HL CS: AUTHENTICATION INTERFACE (client side of the login protocol)
    ==============================================================================
    Collects username + password and POSTs them to /login, where the server
-   verifies the password HASH and starts a signed session. The guest tab
-   handles day-pass sign-in via guest code. Client-side `required` attributes
+   verifies the password HASH and starts a signed session. The guest tab handles
+   day-pass sign-in via guest code or QR code. Client-side `required` attributes
    give instant feedback; the server re-validates everything.
    ============================================================================== #}
 {% extends "base.html" %}
@@ -11,30 +11,67 @@
 {% block title %}Log In - FairShare System{% endblock %}
 
 {% block content %}
-<div style="max-width: 500px; margin: 2.5rem auto; position: relative;">
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<div style="max-width: 560px; margin: 2.5rem auto; position: relative;">
   <div class="card auth-login-card" style="padding: 2.25rem;">
     <div style="text-align: left; margin-bottom: 1.5rem;">
-      <span class="badge badge-red" style="margin-bottom: 0.75rem;">Sign In</span>
+      <span class="badge {% if tab == 'guest' %}badge-blue{% else %}badge-red{% endif %}" style="margin-bottom: 0.75rem;">Sign In</span>
       <h2 style="font-size: 1.9rem; margin-bottom: 0.25rem;">Sign In</h2>
-      <p style="color: var(--text-muted); font-size: 0.9rem;">Members and admins land in their own dashboards automatically.</p>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">Members, admins, and guests can access FairShare from here.</p>
     </div>
 
-    <form action="{{ url_for('login') }}" method="POST" id="login-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="form-group">
-        <label class="form-label">Username</label>
-        <input type="text" name="username" class="form-control" placeholder="Enter username" autocomplete="username" autofocus required>
+    <div class="auth-tabs" role="tablist" aria-label="Sign-in type">
+      <button type="button" class="auth-tab {% if tab != 'guest' %}active{% endif %}" data-tab="account" role="tab" aria-selected="{{ 'true' if tab != 'guest' else 'false' }}">Member / Admin</button>
+      <button type="button" class="auth-tab {% if tab == 'guest' %}active{% endif %}" data-tab="guest" role="tab" aria-selected="{{ 'true' if tab == 'guest' else 'false' }}">Guest Pass</button>
+    </div>
+
+    <div class="auth-panel" data-panel="account" role="tabpanel" {% if tab == 'guest' %}hidden{% endif %}>
+      <form action="{{ url_for('login') }}" method="POST" id="login-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+          <label class="form-label" for="username">Username</label>
+          <input type="text" name="username" id="username" class="form-control" placeholder="Enter username" autocomplete="username" {% if tab != 'guest' %}autofocus{% endif %} required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <input type="password" name="password" id="password" class="form-control" placeholder="Enter password" autocomplete="current-password" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; padding: 0.8rem; font-size: 1.05rem;">
+          Sign In &rarr;
+        </button>
+      </form>
+      <p style="color: var(--text-dim); font-size: 0.78rem; margin-top: 1rem;">Members and admins land in their own dashboards automatically.</p>
+    </div>
+
+    <div class="auth-panel" data-panel="guest" role="tabpanel" {% if tab != 'guest' %}hidden{% endif %}>
+      <div style="margin-bottom: 1.1rem;">
+        <span class="badge badge-blue" style="margin-bottom: 0.6rem;">Guest Day Pass</span>
+        <h3 style="font-size: 1.35rem; margin-bottom: 0.25rem;">Guest Sign In</h3>
+        <p style="color: var(--text-muted); font-size: 0.88rem;">Enter the Guest Pass Code from your host member, or scan its QR code.</p>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Password</label>
-        <input type="password" name="password" class="form-control" placeholder="Enter password" autocomplete="current-password" required>
-      </div>
-
-      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; padding: 0.8rem; font-size: 1.05rem;">
-        Sign In &rarr;
+      <button type="button" id="guest-camera-toggle" class="btn btn-ghost btn-sm" style="width: 100%; margin-bottom: 1rem;" data-label-on="Scan QR Code">
+        Scan Guest Pass QR
       </button>
-    </form>
+      <div id="guest-camera-viewport" class="camera-viewport" style="display: none;"></div>
+      <div id="guest-scan-toast" class="scan-toast" hidden></div>
+
+      <form action="{{ url_for('login', tab='guest') }}" method="POST" id="guest-login-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+          <label class="form-label" for="guest-code-input">Guest Pass Code</label>
+          <input type="text" name="guest_code" id="guest-code-input" class="form-control" placeholder="E.G. GST-1A2B3C" autocomplete="off" autocapitalize="characters" spellcheck="false" style="text-transform: uppercase;" value="{{ request.form.get('guest_code', '') }}" {% if tab == 'guest' %}autofocus{% endif %} required>
+        </div>
+        <button type="submit" class="btn btn-secondary" style="width: 100%; padding: 0.8rem; font-size: 1.05rem;">
+          Enter as Guest &rarr;
+        </button>
+      </form>
+
+      <p style="color: var(--text-dim); font-size: 0.78rem; margin-top: 1rem;">Guest passes are valid for the current day. Ask your host member if you do not have a code.</p>
+    </div>
   </div>
 </div>
 {% endblock %}

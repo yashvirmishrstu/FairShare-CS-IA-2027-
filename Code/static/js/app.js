@@ -27,13 +27,16 @@
 document.addEventListener('DOMContentLoaded', () => {
   initSessionPointsCounter();
   initPointsCelebration();
+  initActionAnimations();
   initGeoDrift();
   initMobileNav();
   initClientValidation();
+  initPageLoading();
   initBarcodeAndQRCodes();
   initFacilityScanner();
   initReceiptScanner();
   initGuestLogin();
+  initGuestSharePage();
   initAuthTabs();
   initAdminAnalytics();
   initPrintIdCard();
@@ -121,6 +124,62 @@ function initClientValidation() {
         e.preventDefault();
       }
     });
+  });
+}
+
+// Global loading feedback for initial rendering, internal navigation, and forms.
+// The loader is deliberately limited to same-origin page changes so external
+// links, downloads, camera controls, and invalid forms are never obstructed.
+function initPageLoading() {
+  const loader = document.getElementById('page-loader');
+  if (!loader) return;
+
+  const hidePageLoader = () => {
+    document.body.classList.add('page-ready');
+    loader.setAttribute('aria-hidden', 'true');
+  };
+  const showPageLoader = () => {
+    document.body.classList.remove('page-ready');
+    loader.setAttribute('aria-hidden', 'false');
+  };
+
+  // Wait briefly for fonts and layout, but always release the page if a CDN is slow.
+  const finishInitialLoad = () => window.setTimeout(hidePageLoader, 180);
+  if (document.readyState === 'complete') finishInitialLoad();
+  else window.addEventListener('load', finishInitialLoad, { once: true });
+  window.setTimeout(hidePageLoader, 1800);
+  window.addEventListener('pageshow', hidePageLoader);
+
+  document.addEventListener('click', event => {
+    if (event.defaultPrevented) return;
+    const link = event.target.closest('a');
+    if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+    let destination;
+    try { destination = new URL(link.href, window.location.href); } catch (e) { return; }
+    if (destination.origin !== window.location.origin
+        || (destination.pathname === window.location.pathname
+            && destination.search === window.location.search
+            && destination.hash)) return;
+    showPageLoader();
+  });
+
+  document.addEventListener('submit', event => {
+    if (event.defaultPrevented || !(event.target instanceof HTMLFormElement)) return;
+
+    // The validation listener runs first; this check prevents a stuck loader
+    // when a client-side validation rule cancels the submission.
+    window.setTimeout(() => {
+      if (event.defaultPrevented) return;
+      const form = event.target;
+      const submitter = event.submitter || form.querySelector('button[type="submit"], input[type="submit"]');
+      if (submitter) {
+        submitter.classList.add('is-loading');
+        submitter.setAttribute('aria-busy', 'true');
+      }
+      showPageLoader();
+    }, 0);
   });
 }
 
@@ -458,6 +517,60 @@ function initGuestLogin() {
   }
 }
 
+// Shareable guest-pass page controls: copy the code/link or use the device share sheet.
+function initGuestSharePage() {
+  const status = document.getElementById('guest-share-status');
+  const copyButtons = document.querySelectorAll('[data-copy-value]');
+  if (!copyButtons.length && !document.getElementById('native-share-guest-pass')) return;
+
+  const setStatus = (message) => {
+    if (status) status.textContent = message;
+  };
+
+  const copyText = async (value) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const helper = document.createElement('textarea');
+        helper.value = value;
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.focus();
+        helper.select();
+        document.execCommand('copy');
+        helper.remove();
+      }
+      setStatus('Copied to clipboard.');
+    } catch (error) {
+      setStatus('Copy was unavailable. Select the text and copy it manually.');
+    }
+  };
+
+  copyButtons.forEach(button => {
+    button.addEventListener('click', () => copyText(button.getAttribute('data-copy-value') || ''));
+  });
+
+  const shareButton = document.getElementById('native-share-guest-pass');
+  if (shareButton) {
+    shareButton.addEventListener('click', async () => {
+      const shareUrl = shareButton.getAttribute('data-share-url') || window.location.href;
+      const shareTitle = shareButton.getAttribute('data-share-title') || 'FairShare Guest Pass';
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: shareTitle, text: 'Use this page to access your FairShare guest pass.', url: shareUrl });
+          setStatus('Share sheet opened.');
+        } catch (error) {
+          if (error.name !== 'AbortError') setStatus('Sharing was unavailable.');
+        }
+      } else {
+        await copyText(shareUrl);
+      }
+    });
+  }
+}
+
 // Optional webcam QR/barcode scanning via html5-qrcode (graceful fallback)
 function initCameraScanner() {
   const toggleBtn = document.getElementById('camera-toggle');
@@ -695,6 +808,29 @@ function initAdminAnalytics() {
 // store scoped to the browser tab) survives page reloads but not tab
 // closes. Regex (regular expressions) extract the point values from flash
 // message text — pattern matching / parsing a string, a core CS skill.
+// Extract a signed point change from a flash message. Explicit signs always win;
+// spending phrases such as "claimed ... for 90 pts" are treated as deductions.
+function getPointChange(text) {
+  const normalized = text.replace(/[−–—]/g, '-');
+  const explicit = normalized.match(/([+-])\s*(\d[\d,]*)\s*(?:pts?|points?)\b/i);
+  if (explicit) {
+    const value = parseInt(explicit[2].replace(/[^0-9]/g, ''), 10) || 0;
+    return explicit[1] === '-' ? -value : value;
+  }
+
+  const amount = normalized.match(/(\d[\d,]*)\s*(?:pts?|points?)\b/i);
+  if (!amount) return 0;
+
+  const value = parseInt(amount[1].replace(/[^0-9]/g, ''), 10) || 0;
+  const lower = normalized.toLowerCase();
+  if (/\b(?:claimed|claim|spent|spend|deduct(?:ed)?|converted)\b/.test(lower)
+      || /\bcredit(?:ed)?\s+(?:points?|pts?)\s+toward\b/.test(lower)) {
+    return -value;
+  }
+  if (/\b(?:earned|credited)\b/.test(lower)) return value;
+  return 0;
+}
+
 function initSessionPointsCounter() {
   const badge = document.getElementById('session-points-badge');
   const valueEl = document.getElementById('session-points-value');
@@ -707,10 +843,8 @@ function initSessionPointsCounter() {
   let freshPoints = 0;
   alerts.forEach(alert => {
     const text = alert.textContent || '';
-    const match = text.match(/\+?(\d+[\d,]*)\s*(?:pts|points|point)/i)
-               || text.match(/(\d+[\d,]*)\s*(?:points? earned|pts earned)/i);
-    if (!match) return;
-    freshPoints += parseInt(match[1].replace(/[^0-9]/g, ''), 10) || 0;
+    if (alert.classList.contains('alert-danger') || alert.classList.contains('alert-warning')) return;
+    freshPoints += getPointChange(text);
   });
 
   // Read stored total, add new points, write back
@@ -735,10 +869,9 @@ function initSessionPointsCounter() {
   });
 }
 
-// Points-logged celebration toast — triggered when a flash message
-// indicates points were earned (check-in, purchase, referral, receipt scan).
-// Matches the reference "Points Logged" design: bold red badge, scale-in,
-// slight rotation, auto-dismiss.
+// Points-change toast — triggered when a flash message reports points earned
+// or spent. The sign and tone are derived from the same parsed change so the
+// visual feedback cannot disagree with the underlying transaction.
 function initPointsCelebration() {
   const alerts = document.querySelectorAll('.alert');
   if (!alerts.length) return;
@@ -746,18 +879,50 @@ function initPointsCelebration() {
   alerts.forEach(alert => {
     const text = alert.textContent || '';
     // Look for point-related keywords in flash messages
-    const match = text.match(/\+?(\d+[\d,]*)\s*(?:pts|points|point)/i)
-               || text.match(/(\d+[\d,]*)\s*(?:points? earned|pts earned)/i);
-    if (!match) return;
-
-    const points = parseInt(match[1].replace(/[^0-9]/g, ''), 10);
-    if (!points || points <= 0) return;
+    if (alert.classList.contains('alert-danger') || alert.classList.contains('alert-warning')) return;
+    const points = getPointChange(text);
+    if (!points) return;
 
     showPointsToast(points);
   });
 }
 
+// Action feedback animations use the server's success flash as the source of truth.
+// This keeps animations out of failed claims/scans and works after the redirect
+// that follows each state-changing request.
+function initActionAnimations() {
+  document.querySelectorAll('.alert.alert-success').forEach(alert => {
+    const text = alert.textContent || '';
+
+    if (/coupon\s+claimed/i.test(text)) {
+      alert.classList.add('alert-action-claim');
+      const claimedCoupon = document.querySelector('.claimed-coupon-card');
+      if (claimedCoupon) claimedCoupon.classList.add('coupon-claimed-pop');
+
+      // Highlight the matching catalog card when it is still visible.
+      const match = text.match(/Coupon claimed!\s*(.*?)\s+for\s+\d[\d,]*\s+pts/i);
+      if (match) {
+        const target = Array.from(document.querySelectorAll('.coupon-card'))
+          .find(card => (card.textContent || '').includes(match[1]));
+        if (target) target.classList.add('coupon-claim-target');
+      }
+    }
+
+    if (/checked\s+in\s+to/i.test(text)) {
+      alert.classList.add('alert-action-checkin');
+      const activeSession = document.querySelector('.session-active');
+      if (activeSession) activeSession.classList.add('session-started');
+    }
+  });
+}
+
 function showPointsToast(points) {
+  const isPositive = points > 0;
+  const magnitude = Math.abs(points);
+  const sign = isPositive ? '+' : '−';
+  const label = isPositive ? 'Points Earned' : 'Points Spent';
+  const tone = isPositive ? 'points-toast-positive' : 'points-toast-negative';
+
   // Create backdrop
   const backdrop = document.createElement('div');
   backdrop.className = 'points-toast-backdrop';
@@ -792,9 +957,9 @@ function showPointsToast(points) {
   const toast = document.createElement('div');
   toast.className = 'points-toast';
   toast.innerHTML = `
-    <div class="points-toast-inner">
-      <div class="points-toast-value">+${points} FS</div>
-      <div class="points-toast-label">Points Earned</div>
+    <div class="points-toast-inner ${tone}">
+      <div class="points-toast-value">${sign}${magnitude} FS</div>
+      <div class="points-toast-label">${label}</div>
     </div>`;
   document.body.appendChild(toast);
 
