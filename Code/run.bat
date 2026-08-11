@@ -31,5 +31,11 @@ if not defined SECRET_KEY (
     echo Note: SECRET_KEY was not set - generated a fresh random key for this session.
 )
 
+REM Demo accounts (alice/bob/charlie/diana + marketplace data) are OPT-IN so
+REM a public deployment is never seeded with documented passwords. Local
+REM development wants them, so default to enabled here; a production deploy
+REM should NOT set SEED_DEMO_DATA.
+if not defined SEED_DEMO_DATA set "SEED_DEMO_DATA=1"
+
 echo Starting FairShare (debug + auto-reloader) - press Ctrl+C to stop.
 python main.py %*

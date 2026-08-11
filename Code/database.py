@@ -33,7 +33,15 @@ from werkzeug.security import generate_password_hash
 from config import Config
 
 def get_db():
-    """Connect to SQLite database and set row factory.
+    """Connect to the database and set row factory.
+
+    Two backends, chosen by environment:
+
+    * DEFAULT (no TURSO_URL): a local SQLite file at Config.DATABASE.
+    * HOSTED (TURSO_URL set): a Turso / libSQL database — SQLite-compatible
+      and persistent on serverless platforms (Vercel). The connection is
+      wrapped in a sqlite3-compatible adapter (see _TursoConnection below)
+      so every caller below uses the identical cursor API.
 
     IB HL CS NOTES:
     * This is a *factory function* — every caller gets a fresh connection,
@@ -44,14 +52,264 @@ def get_db():
       This improves code readability and maintainability over raw tuples.
     * `PRAGMA foreign_keys = ON` is essential: SQLite disables foreign-key
       enforcement by default, so without this line the ON DELETE CASCADE
-      rules defined in the schema would be silently ignored.
+      rules defined in the schema would be silently ignored. (libSQL, the
+      engine behind Turso, enforces foreign keys by default, so the hosted
+      path skips the pragma.)
     """
+    turso_url = os.environ.get('TURSO_URL')
+    if turso_url:
+        return _TursoConnection(turso_url, os.environ.get('TURSO_AUTH_TOKEN'))
+
     db_path = Config.DATABASE
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
+
+
+# ---------------------------------------------------------------------------
+# HOSTED SQLITE ADAPTER (Turso / libSQL) — optional persistent storage
+# ---------------------------------------------------------------------------
+# Local SQLite stores data in a file, which a serverless filesystem (Vercel)
+# cannot keep: it is read-only outside /tmp and /tmp resets per instance, so
+# logins, points and receipts would be lost on every cold start. To make the
+# data survive, the app can instead talk to a HOSTED SQLite-compatible
+# database. Turso (https://turso.tech) runs libSQL — a SQLite fork — so all
+# of this project's SQL (CREATE TRIGGER, date('now'), strftime, PRAGMA
+# table_info migrations, AUTOINCREMENT, BEGIN IMMEDIATE transactions) works
+# unchanged.
+#
+# The classes below are a thin sqlite3-compatible shim over the official
+# `libsql-client` Python package. They implement exactly the connection /
+# cursor surface the rest of the codebase uses — cursor(), fetchone(),
+# fetchall(), lastrowid, rowcount, executescript(), executemany(),
+# commit(), rollback(), close(), and rows addressable by index or column
+# name — so models.py and main.py need no changes at all.
+#
+# Enable it by setting TURSO_URL (the libsql://... connection URL from the
+# Turso dashboard — that scheme maps to WebSockets/Hrana, which supports
+# transactions; the https:// scheme does NOT) and optionally TURSO_AUTH_TOKEN
+# (a bearer token, required for remote databases). Without TURSO_URL the app
+# keeps using the local data/fairshare.db file exactly as before.
+#
+# IB HL CS: this is *abstraction / separation of concerns* — the persistence
+# backend is hidden behind one consistent interface, so swapping storage
+# changes one factory function instead of every query.
+
+
+def _split_statements(sql):
+    """Split a SQL script into individual statements on semicolons that
+    appear OUTSIDE quoted strings. sqlite3.executescript() runs many
+    statements at once, but the libsql client executes one statement per
+    call, so the adapter splits first (safe for this schema's DDL, which
+    contains no semicolons inside string literals)."""
+    statements = []
+    current = []
+    quote = None
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if quote:
+            current.append(ch)
+            if ch == quote and (i == 0 or sql[i - 1] != '\\'):
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+            current.append(ch)
+        elif ch == ';':
+            statements.append(''.join(current))
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+    statements.append(''.join(current))
+    return [s for s in statements if s.strip()]
+
+
+class _TursoRow:
+    """A result row that behaves like sqlite3.Row: addressable by column
+    number (row[0]) or column name (row['member_id']), iterable, and
+    convertible with dict(row) — which the admin analytics and guest-report
+    JSON serialisation rely on."""
+    __slots__ = ('_cols', '_vals', '_map')
+
+    def __init__(self, columns, values):
+        self._cols = list(columns)
+        self._vals = list(values)
+        self._map = dict(zip(self._cols, self._vals))
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._vals[key]
+        return self._map[key]
+
+    def keys(self):
+        return self._cols
+
+    def __iter__(self):
+        return iter(self._vals)
+
+    def __len__(self):
+        return len(self._vals)
+
+    def __contains__(self, key):
+        return key in self._map
+
+    def asdict(self):
+        return dict(zip(self._cols, self._vals))
+
+
+class _TursoCursor:
+    """sqlite3-style cursor over a shared libsql client. Each execute()
+    stores the ResultSet; fetchone()/fetchall() consume it lazily, exactly
+    like a sqlite3 cursor."""
+
+    def __init__(self, connection):
+        self._conn = connection
+        self._rows = []
+        self._pos = 0
+        self.lastrowid = None
+        self.rowcount = -1
+
+    def execute(self, sql, params=()):
+        self._conn._ensure_open()
+        statement = sql.strip()
+        upper = statement.upper()
+        # models.py opens write-locked transactions with
+        # conn.execute("BEGIN IMMEDIATE") and closes them with commit() /
+        # rollback(). Over the Hrana protocol a transaction is a STREAM-STATE
+        # change, not SQL text: executing the literal string "BEGIN IMMEDIATE"
+        # is silently ignored by the server ("cannot commit - no transaction
+        # is active"). Route transaction control through the client's
+        # transaction() API instead, and run later statements on that stream.
+        if upper.startswith('BEGIN'):
+            self._conn._open_txn()
+            return self
+        if upper.startswith('COMMIT'):
+            self._conn.commit()
+            return self
+        if upper.startswith('ROLLBACK'):
+            self._conn.rollback()
+            return self
+
+        # A regular statement runs inside the open transaction if there is
+        # one, otherwise directly on the client connection.
+        client = self._conn._txn if self._conn._txn is not None else self._conn._client
+        result = client.execute(statement, params)
+        self.lastrowid = result.last_insert_rowid
+        self.rowcount = result.rows_affected
+        columns = result.columns
+        if columns:
+            self._rows = [_TursoRow(columns, list(values)) for values in result.rows]
+        else:
+            self._rows = []
+        self._pos = 0
+        return self
+
+    def fetchone(self):
+        if self._pos >= len(self._rows):
+            return None
+        row = self._rows[self._pos]
+        self._pos += 1
+        return row
+
+    def fetchall(self):
+        rows = self._rows[self._pos:]
+        self._pos = len(self._rows)
+        return rows
+
+    def executescript(self, sql):
+        for statement in _split_statements(sql):
+            self.execute(statement)
+        return self
+
+    def executemany(self, sql, seq_of_params):
+        for params in seq_of_params:
+            self.execute(sql, params)
+        return self
+
+    def close(self):
+        pass
+
+
+class _TursoConnection:
+    """sqlite3-compatible connection backed by a libSQL (Turso) database.
+    The real client is created lazily so the app still boots on machines
+    where libsql-client is not installed (as long as TURSO_URL is unset)."""
+
+    def __init__(self, url, auth_token=None):
+        try:
+            from libsql_client import create_client_sync
+        except ImportError as exc:
+            raise RuntimeError(
+                "TURSO_URL is set but the 'libsql-client' package is not "
+                "installed. Install it with: pip install libsql-client"
+            ) from exc
+        self._client = create_client_sync(url, auth_token=auth_token)
+        self._txn = None  # active Hrana TransactionSync, or None
+        self._closed = False
+        self.row_factory = None  # rows are already index/name-addressable
+
+    def _ensure_open(self):
+        if self._closed:
+            raise RuntimeError("database connection is closed")
+
+    def _open_txn(self):
+        """Open a real Hrana stream transaction (see _TursoCursor.execute)."""
+        if self._txn is None:
+            self._txn = self._client.transaction()
+
+    def cursor(self):
+        return _TursoCursor(self)
+
+    def execute(self, sql, params=()):
+        return self.cursor().execute(sql, params)
+
+    def executemany(self, sql, seq_of_params):
+        return self.cursor().executemany(sql, seq_of_params)
+
+    def executescript(self, sql):
+        return self.cursor().executescript(sql)
+
+    def commit(self):
+        if self._txn is not None:
+            txn, self._txn = self._txn, None
+            txn.commit()
+
+    def rollback(self):
+        if self._txn is not None:
+            txn, self._txn = self._txn, None
+            try:
+                txn.rollback()
+            except Exception:
+                # The transaction may already be closed (e.g. a statement or
+                # commit failed); discarding it is the rollback here.
+                pass
+
+    def close(self):
+        if not self._closed:
+            if self._txn is not None:
+                try:
+                    self._txn.rollback()
+                except Exception:
+                    pass
+                self._txn = None
+            self._client.close()
+            self._closed = True
+
+    # Context-manager support mirrors sqlite3.Connection: commit on clean
+    # exit, rollback on error.
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
+            self.commit()
+        else:
+            self.rollback()
+        return False
 
 def init_db():
     """Initialize database tables and seed initial demo data."""
@@ -307,15 +565,31 @@ def init_db():
             Config.DEFAULT_POINTS_VALUE_DOLLARS
         ))
 
-    # Seed Demo Admin User if empty
+    # Seed the initial Admin User if empty.
+    # SECURITY (VULN-001 fix): the admin password is NEVER a hardcoded
+    # default. It comes from the ADMIN_PASSWORD environment variable (set by
+    # the operator at deploy time); if that is not provided, a strong random
+    # password is generated and printed ONCE to the startup log (readable
+    # from the operator's console / server logs). Only the salted hash is
+    # stored in the database.
     cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
     if cursor.fetchone()[0] == 0:
-        admin_pass = generate_password_hash("admin123")
-        cursor.execute("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)", ("admin", admin_pass, "admin"))
+        admin_pass = os.environ.get('ADMIN_PASSWORD') or secrets.token_urlsafe(12)
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+            ("admin", generate_password_hash(admin_pass), "admin")
+        )
+        print(f"[FairShare] Created the initial admin account: username 'admin', "
+              f"password '{admin_pass}' (set ADMIN_PASSWORD to choose your own).", flush=True)
 
-    # Seed Demo Member Users if empty
+    # Seed Demo Member Users if empty — OPT-IN ONLY (SEED_DEMO_DATA=1).
+    # SECURITY (VULN-001 fix): the demo members' passwords are documented in
+    # the README, so a public deployment must never contain them by default.
+    # The launcher scripts (run.sh / run.bat) and the test suite enable
+    # SEED_DEMO_DATA for local development; deployments leave it unset and
+    # create real members from the admin panel.
     cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'member'")
-    if cursor.fetchone()[0] == 0:
+    if cursor.fetchone()[0] == 0 and os.environ.get('SEED_DEMO_DATA') == '1':
         demo_members = [
             ("alice", "password123", "Alice Johnson", "Member", "alice@example.com", "555-0101", "MBR-1001"),
             ("bob", "password123", "Bob Smith", "Member", "bob@example.com", "555-0102", "MBR-1002"),

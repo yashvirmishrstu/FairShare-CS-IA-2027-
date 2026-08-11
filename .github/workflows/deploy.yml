@@ -1,0 +1,159 @@
+name: Test & Deploy
+
+# Runs the full test suite on EVERY push (any branch), then deploys the app
+# to Vercel (production) when the push lands on main, and smoke-tests the
+# result. Trigger manually anytime with the "Run workflow" button.
+on:
+  push:
+  workflow_dispatch:
+
+# One deploy at a time per branch; a newer push supersedes an in-flight one.
+concurrency:
+  group: fairshare-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Code   # the app lives in the Code/ subdirectory of the repo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"            # matches Vercel's Python runtime default
+          cache: pip
+          cache-dependency-path: Code/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite
+        # SECRET_KEY is bootstrapped by tests/conftest.py, so no secrets are needed here.
+        run: python -m pytest tests/ -q
+
+  deploy:
+    name: Deploy to Vercel (production)
+    needs: test
+    # Production deploy only for pushes to main (or manual runs).
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      deployment-url: ${{ steps.deploy.outputs.preview-url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ONE-CLICK TURSO SETUP — this step makes sure the Vercel Marketplace
+      # Turso integration is installed on the project. That integration
+      # provisions TURSO_URL + TURSO_AUTH_TOKEN automatically, so the app's
+      # database survives cold starts instead of living on Vercel's ephemeral
+      # filesystem. Install it once from the marketplace:
+      #   https://vercel.com/marketplace/tursocloud
+      # (Remove this step only if you intentionally want ephemeral storage.)
+      - name: Verify Turso integration is wired (marketplace env vars)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          json=$(curl -sS -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env")
+          echo "$json" | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          keys = {
+              e["key"] for e in data.get("envs", [])
+              if "production" in (e.get("target") or [])
+          }
+          missing = [k for k in ("TURSO_URL", "TURSO_AUTH_TOKEN") if k not in keys]
+          if missing:
+              print("::error::Missing production env vars: " + str(missing) + ". "
+                    "Install the Turso Cloud integration (one click) at "
+                    "https://vercel.com/marketplace/tursocloud so the app uses "
+                    "a persistent database, then re-run this workflow.")
+              sys.exit(1)
+          print("Turso integration is wired for production (TURSO_URL + TURSO_AUTH_TOKEN present).")
+          '
+
+      - name: Deploy to Vercel
+        id: deploy
+        uses: amondnet/vercel-action@v42
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: "--prod"
+          working-directory: ./Code        # Vercel project root = Code/ (where vercel.json lives)
+
+      # Quick guard: the live production app must answer HTTP 200 right away.
+      - name: Smoke test the deployed app
+        run: |
+          url="${{ steps.deploy.outputs.preview-url }}"
+          [ -n "$url" ] || { echo "::error::Deploy produced no URL"; exit 1; }
+          code=""
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 20 "$url/login" || true)
+            [ "$code" = "200" ] && break
+            sleep 10
+          done
+          echo "Deployed /login returned HTTP $code ($url)"
+          [ "$code" = "200" ]
+
+  smoke:
+    name: Smoke test (Turso adapter + Vercel URL)
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Code
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Code/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Boot a real libSQL server (the software Turso runs) so the smoke test
+      # exercises the exact Hrana/WebSocket network path in production.
+      - name: Start a local sqld server for the adapter test
+        run: |
+          curl -sL -o /tmp/sqld.tar.xz \
+            "https://github.com/tursodatabase/libsql/releases/download/libsql-server-v0.24.32/libsql-server-x86_64-unknown-linux-gnu.tar.xz"
+          tar -xJf /tmp/sqld.tar.xz -C /tmp
+          chmod +x /tmp/libsql-server-x86_64-unknown-linux-gnu/sqld
+          /tmp/libsql-server-x86_64-unknown-linux-gnu/sqld \
+            --hrana-listen-addr 127.0.0.1:8081 --http-listen-addr 127.0.0.1:8080 \
+            --db-path /tmp/sqld-smoke.db > /tmp/sqld.log 2>&1 &
+          for i in $(seq 1 15); do
+            curl -s -o /dev/null http://127.0.0.1:8080/ && break
+            sleep 1
+          done
+
+      # Boots the full app with the Turso adapter and hits the key routes
+      # (member/admin logins, facility scans, rewards, coupon claim, guest
+      # day-pass), then HTTP-checks the live deployed VERCEL_URL.
+      - name: Boot the app through the Turso adapter and hit key routes
+        env:
+          SECRET_KEY: smoke-test
+          ADMIN_PASSWORD: admin123
+          SEED_DEMO_DATA: "1"
+          TURSO_URL: ws://127.0.0.1:8081
+          VERCEL_URL: ${{ needs.deploy.outputs.deployment-url }}
+        run: python smoke_vercel.py

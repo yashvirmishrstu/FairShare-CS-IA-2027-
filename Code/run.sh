@@ -32,5 +32,13 @@ if [ -z "${SECRET_KEY:-}" ]; then
     echo "Note: SECRET_KEY was not set - generated a fresh random key for this session."
 fi
 
+# Demo accounts (alice/bob/charlie/diana + marketplace data) are OPT-IN so a
+# public deployment is never seeded with documented passwords. Local
+# development wants them, so default to enabled here; a production deploy
+# should NOT set SEED_DEMO_DATA.
+if [ -z "${SEED_DEMO_DATA:-}" ]; then
+    export SEED_DEMO_DATA=1
+fi
+
 echo "Starting FairShare (debug + auto-reloader) - press Ctrl+C to stop."
 exec python main.py "$@"

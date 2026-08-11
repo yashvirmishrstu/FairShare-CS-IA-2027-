@@ -23,3 +23,6 @@ data/
 
 # Freebuff
 .freebuff/
+
+# Vercel (local CLI state)
+.vercel/

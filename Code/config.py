@@ -33,7 +33,15 @@ class Config:
     # publicly-known default (VULN-001).
     SECRET_KEY = os.environ.get('SECRET_KEY')
     # Absolute path to the SQLite database file (single-file persistence).
-    DATABASE = os.path.join(BASE_DIR, 'data', 'fairshare.db')
+    # DATABASE_PATH overrides it for deployments that must relocate the DB.
+    # On Vercel the filesystem is read-only except /tmp (and ephemeral), so
+    # the app defaults to /tmp/fairshare.db there; every other environment
+    # keeps the local data/fairshare.db.
+    DATABASE = os.environ.get('DATABASE_PATH') or (
+        os.path.join('/tmp', 'fairshare.db')
+        if os.environ.get('VERCEL') == '1'
+        else os.path.join(BASE_DIR, 'data', 'fairshare.db')
+    )
 
     # ------------------------------------------------------------------
     # ALGORITHM WEIGHTS — the "variables" of the engagement-score formula

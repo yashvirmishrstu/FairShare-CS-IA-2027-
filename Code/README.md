@@ -70,9 +70,12 @@ Traditional clubs charge members a flat fee regardless of their contribution lev
 
 The database seeds itself on first launch (`data/fairshare.db` is created automatically). No manual setup is required.
 
+**Admin account (secure by default):** the initial `admin` password is never hardcoded. On first launch it is read from the `ADMIN_PASSWORD` environment variable; if that is not set, a strong random password is generated and printed once in the startup log. Set `ADMIN_PASSWORD` in your deployment to choose your own.
+
+**Demo member accounts (opt-in):** the demo members below exist only when `SEED_DEMO_DATA=1` — the `run.sh` / `run.bat` launchers enable it for local development. Public deployments leave it unset and create real members from the admin panel.
+
 | Role | Username | Password |
 |------|----------|----------|
-| Admin | `admin` | `admin123` |
 | Member | `alice` | `password123` |
 | Member | `bob` | `password123` |
 | Member | `charlie` | `password123` |
@@ -121,6 +124,12 @@ python serve.py
 ```
 
 This serves on `0.0.0.0:5000` with debug OFF and multi-threaded request handling.
+
+### Deploying to Vercel
+
+The app is also configured for free hosting on **Vercel** (serverless Flask), with a GitHub Actions pipeline that runs the test suite on every push and deploys to production. Because a serverless filesystem is not persistent, the database can be hosted in a SQLite-compatible Turso database (`TURSO_URL`) instead of a local file.
+
+Full setup — importing the repo, the required `SECRET_KEY` / `TURSO_URL` environment variables, persistent storage, and the CI/CD workflow — is documented in [DEPLOY.md](DEPLOY.md).
 
 ## Resetting the Demo Database
 
