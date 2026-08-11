@@ -1,8 +1,9 @@
 name: Test & Deploy
 
 # Runs the full test suite on EVERY push (any branch), then deploys the app
-# to Vercel (production) when the push lands on main, and smoke-tests the
-# result. Trigger manually anytime with the "Run workflow" button.
+# to Vercel (production) when the push lands on vercel-deployment, and
+# smoke-tests the result. Trigger manually anytime with the
+# "Run workflow" button.
 on:
   push:
   workflow_dispatch:
@@ -37,6 +38,19 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Keep requirements.txt files in sync
+        # The repo-root requirements.txt (../requirements.txt) backs Vercel's
+        # default-root-directory fallback build (api/index.py) and must mirror
+        # the RUNTIME deps of Code/requirements.txt. pytest is intentionally
+        # absent from the root copy (test-only, CI-only), so it is excluded
+        # from the comparison.
+        run: |
+          norm() { tr -d '\r' < "$1" | grep -vE '^[[:space:]]*(#|$)' | grep -E '^[A-Za-z0-9_.-]+' | grep -v '^pytest'; }
+          if ! diff <(norm requirements.txt) <(norm ../requirements.txt); then
+            echo "::error::Code/requirements.txt and root requirements.txt are out of sync - update both together (pytest stays in the Code copy)."
+            exit 1
+          fi
+
       - name: Run test suite
         # SECRET_KEY is bootstrapped by tests/conftest.py, so no secrets are needed here.
         run: python -m pytest tests/ -q
@@ -44,12 +58,12 @@ jobs:
   deploy:
     name: Deploy to Vercel (production)
     needs: test
-    # Production deploy only for pushes to main (or manual runs).
+    # Production deploy only for pushes to vercel-deployment (or manual runs).
     # NOTE: preview deployments are created by Vercel itself for pull requests
     # (the GitHub app / dashboard), NOT by this job. The env-var check below
     # still guards the preview environment so previews can never end up with
     # demo accounts.
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/vercel-deployment' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       deployment-url: ${{ steps.deploy.outputs.preview-url }}

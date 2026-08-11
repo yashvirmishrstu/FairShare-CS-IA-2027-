@@ -118,8 +118,9 @@ the `https://` scheme does not support transactions.)
 ## CI/CD: GitHub Actions
 
 `.github/workflows/deploy.yml` (at the **repository root** — one level above
-`Code/`) runs the full test suite on every push and deploys to Vercel when
-the push lands on `main`. To use it:
+`Code/`) runs the full test suite on every push, and deploys to Vercel
+(production) when the push lands on `vercel-deployment` — pushes to any
+other branch run the tests only. To use it:
 
 1. Set the Vercel project's **Root Directory** to `Code` (the app lives in
    that subdirectory of the repo) and set `SECRET_KEY` in the project's
@@ -130,8 +131,16 @@ the push lands on `main`. To use it:
    - `VERCEL_TOKEN` — create at <https://vercel.com/account/tokens>
    - `VERCEL_ORG_ID` — your team ID (Team Settings → General)
    - `VERCEL_PROJECT_ID` — your project ID (Project Settings → General)
-3. Push to `main`. The test job needs no secrets (tests/conftest.py supplies
-   a test `SECRET_KEY`); the deploy job runs only after tests pass.
+3. Push to `vercel-deployment`. The test job needs no secrets
+   (tests/conftest.py supplies a test `SECRET_KEY`); the deploy job runs
+   only after tests pass.
+
+In addition to the test suite, the test job runs a **requirements
+sync-check**: it fails the build if the repo-root `requirements.txt` (the
+fallback for Vercel's default-root-directory build) and
+`Code/requirements.txt` drift apart, so a new runtime dependency can't be
+added to one without the other. `pytest` is the one intended difference —
+it is test-only and stays out of the root copy.
 
 **The deploy job enforces safe credentials before it deploys.** Before
 building, it queries the Vercel env API and fails the run with a clear
