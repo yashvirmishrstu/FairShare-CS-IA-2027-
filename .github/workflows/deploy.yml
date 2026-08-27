@@ -63,7 +63,7 @@ jobs:
     # (the GitHub app / dashboard), NOT by this job. The env-var check below
     # still guards the preview environment so previews can never end up with
     # demo accounts.
-    if: github.ref == 'refs/heads/vercel-deployment' || github.event_name == 'workflow_dispatch'
+    if: (github.ref == 'refs/heads/vercel-deployment' || github.event_name == 'workflow_dispatch') && secrets.VERCEL_TOKEN != '' && secrets.VERCEL_PROJECT_ID != '' && secrets.VERCEL_ORG_ID != ''
     runs-on: ubuntu-latest
     outputs:
       deployment-url: ${{ steps.deploy.outputs.preview-url }}
