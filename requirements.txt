@@ -1,0 +1,15 @@
+# Repo-root requirements.txt for Vercel's fallback entrypoint (api/index.py).
+#
+# When the Vercel project's Root Directory is left at the REPOSITORY root
+# (instead of the recommended `Code`), Vercel's Python builder installs
+# dependencies from THIS file so that api/index.py can import the Flask app
+# living in Code/. The CI workflow and local development use
+# Code/requirements.txt - keep the dependency list in both files in sync.
+#
+# Runtime dependencies only (the app's actual imports); pytest is test-only
+# and stays in the CI/Code requirements.
+Flask>=3.0.0
+Flask-WTF>=1.2.0
+Werkzeug>=3.0.0
+waitress>=3.0.0
+libsql-client>=0.3.1  # optional: hosted SQLite (Turso) persistence when TURSO_URL is set

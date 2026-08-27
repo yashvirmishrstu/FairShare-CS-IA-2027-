@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from main import app
-from database import init_db
+from database import init_db, get_db
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -165,3 +165,63 @@ def test_static_assets_are_cacheable_but_pages_are_not(client):
     resp = client.get('/login')
     cc = resp.headers.get('Cache-Control', '')
     assert 'no-store' in cc,         f'/login Cache-Control is "{cc}" --- pages must be no-store'
+
+
+# ---- VULN-001: seeded credentials are never public defaults ---------------
+
+
+def _fresh_db(tmp_path, monkeypatch, *, admin_password=None, seed_demo=None):
+    """Seed a brand-new database under controlled env: None = variable unset."""
+    monkeypatch.setattr('config.Config.DATABASE', str(tmp_path / 'fresh_sec.db'))
+    if admin_password is None:
+        monkeypatch.delenv('ADMIN_PASSWORD', raising=False)
+    else:
+        monkeypatch.setenv('ADMIN_PASSWORD', admin_password)
+    if seed_demo is None:
+        monkeypatch.delenv('SEED_DEMO_DATA', raising=False)
+    else:
+        monkeypatch.setenv('SEED_DEMO_DATA', seed_demo)
+    init_db()
+
+
+def test_admin_password_is_not_the_public_default(tmp_path, monkeypatch):
+    """With no ADMIN_PASSWORD set, the old publicly-known 'admin123' must NOT
+    verify — the seeded password is random, never a hardcoded value."""
+    from werkzeug.security import check_password_hash
+    _fresh_db(tmp_path, monkeypatch)  # no ADMIN_PASSWORD, no SEED_DEMO_DATA
+    conn = get_db()
+    row = conn.execute(
+        "SELECT password_hash FROM users WHERE username = 'admin'"
+    ).fetchone()
+    conn.close()
+    assert row is not None, 'an admin account must still be created'
+    assert check_password_hash(row['password_hash'], 'admin123') is False
+
+
+def test_demo_members_absent_without_seed_demo_data(tmp_path, monkeypatch):
+    """Demo members (documented passwords) must not exist by default."""
+    _fresh_db(tmp_path, monkeypatch, admin_password='op-secret')
+    conn = get_db()
+    n = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE role = 'member'"
+    ).fetchone()[0]
+    conn.close()
+    assert n == 0
+
+
+def test_admin_password_reads_from_environment(tmp_path, monkeypatch):
+    """ADMIN_PASSWORD lets the operator choose the admin password; opting into
+    SEED_DEMO_DATA restores the documented demo members."""
+    from werkzeug.security import check_password_hash
+    _fresh_db(tmp_path, monkeypatch, admin_password='s3cure-operator-pass', seed_demo='1')
+    conn = get_db()
+    row = conn.execute(
+        "SELECT password_hash FROM users WHERE username = 'admin'"
+    ).fetchone()
+    members = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE role = 'member'"
+    ).fetchone()[0]
+    conn.close()
+    assert check_password_hash(row['password_hash'], 's3cure-operator-pass') is True
+    assert check_password_hash(row['password_hash'], 'admin123') is False
+    assert members == 4

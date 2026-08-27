@@ -23,3 +23,8 @@ data/
 
 # Freebuff
 .freebuff/
+
+# Vercel (local CLI state)
+.vercel/
+# Session dumps (never commit these)
+fs_cookies_*.txt

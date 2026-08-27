@@ -67,9 +67,12 @@ Traditional clubs charge members a flat fee regardless of their contribution lev
 
 The database seeds itself on first launch (`data/fairshare.db` is created automatically). No manual setup is required.
 
+**Admin account (secure by default):** the initial `admin` password is never hardcoded. On first launch it is read from the `ADMIN_PASSWORD` environment variable; if that is not set, a strong random password is generated and printed once in the startup log.
+
+**Demo member accounts (opt-in):** the demo members below exist only when `SEED_DEMO_DATA=1` is set before launching (e.g. `SEED_DEMO_DATA=1 ./run.sh`) — the launchers never enable it by default.
+
 | Role | Username | Password |
 |------|----------|----------|
-| Admin | `admin` | `admin123` |
 | Member | `alice` | `password123` |
 | Member | `bob` | `password123` |
 | Member | `charlie` | `password123` |

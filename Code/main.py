@@ -38,7 +38,12 @@ from config import Config
 from database import get_db, init_db
 from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManager, ReceiptManager, CSVReportGenerator, MarketplaceManager, LoginThrottle
 
-app = Flask(__name__)
+# Static assets live in public/static/ (Vercel serves every file under
+# public/** from its CDN at the matching URL path, so the existing
+# /static/... URLs in the templates work unchanged in production). Locally,
+# Flask serves the very same files through its built-in static route, so
+# development and Vercel behave identically.
+app = Flask(__name__, static_folder='public/static')
 app.config.from_object(Config)
 
 # CSRF protection (VULN-002 fix): every state-changing POST is rejected

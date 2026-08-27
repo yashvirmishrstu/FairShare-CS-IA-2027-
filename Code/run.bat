@@ -31,5 +31,11 @@ if not defined SECRET_KEY (
     echo Note: SECRET_KEY was not set - generated a fresh random key for this session.
 )
 
+REM Demo accounts (alice/bob/charlie/diana + marketplace data) are OPT-IN so
+REM a fresh database is NEVER seeded with documented passwords - not even for
+REM local development. To get the demo accounts for a dev sandbox, launch with:
+REM   set SEED_DEMO_DATA=1
+REM   run.bat
+
 echo Starting FairShare (debug + auto-reloader) - press Ctrl+C to stop.
 python main.py %*

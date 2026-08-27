@@ -13,6 +13,11 @@ import re
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Local verification script: opt in to the documented demo accounts so the
+# member/admin lifecycle checks below have data (deployments don't set these).
+os.environ.setdefault('ADMIN_PASSWORD', 'admin123')
+os.environ.setdefault('SEED_DEMO_DATA', '1')
+
 # Point the app at a throwaway DB BEFORE anything imports it.
 import config
 TMPDIR = tempfile.mkdtemp(prefix="fairshare_verify_")

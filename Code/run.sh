@@ -32,5 +32,10 @@ if [ -z "${SECRET_KEY:-}" ]; then
     echo "Note: SECRET_KEY was not set - generated a fresh random key for this session."
 fi
 
+# Demo accounts (alice/bob/charlie/diana + marketplace data) are OPT-IN so
+# a fresh database is NEVER seeded with documented passwords - not even for
+# local development. To get the demo accounts for a dev sandbox, launch with:
+#   SEED_DEMO_DATA=1 ./run.sh
+
 echo "Starting FairShare (debug + auto-reloader) - press Ctrl+C to stop."
 exec python main.py "$@"

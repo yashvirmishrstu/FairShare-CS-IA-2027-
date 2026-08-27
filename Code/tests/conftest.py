@@ -16,3 +16,10 @@
 import os
 
 os.environ.setdefault('SECRET_KEY', 'fairshare-test-secret-key')
+
+# Tests expect the deterministic seeded demo accounts (alice / admin with the
+# documented passwords). These variables make init_db() seed them exactly as
+# the launcher scripts do locally, while leaving the production defaults
+# (random admin password, NO demo members) untouched.
+os.environ.setdefault('ADMIN_PASSWORD', 'admin123')
+os.environ.setdefault('SEED_DEMO_DATA', '1')
