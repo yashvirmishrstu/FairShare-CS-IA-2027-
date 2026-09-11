@@ -44,9 +44,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-# config.py fails closed without a SECRET_KEY (VULN-001 fix). This is a dev
-# health-check tool that imports the app for its URL map; a throwaway key is
-# fine for static analysis.
+# The app's startup validation fails closed without a SECRET_KEY (VULN-001
+# fix). This is a dev health-check tool that imports the app for its URL map;
+# a throwaway key is fine for static analysis.
 os.environ.setdefault("SECRET_KEY", "check-endpoints-harness-dev-key")
 
 # Regex matching url_for('endpoint', ...) and url_for("endpoint", ...)

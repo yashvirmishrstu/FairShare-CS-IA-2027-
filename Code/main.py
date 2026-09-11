@@ -46,6 +46,16 @@ from models import RewardSettings, EngagementEngine, FacilityTracker, GuestManag
 app = Flask(__name__, static_folder='public/static')
 app.config.from_object(Config)
 
+# Explicit startup validation (VULN-001 fix): config.py itself no longer
+# raises at import time, so tools can `import config` freely. Instead, the
+# app REFUSES TO START here if any required environment variable is missing
+# or unsafe — ONE error lists every problem at once (SECRET_KEY missing or
+# the old public default, and on Vercel: ADMIN_PASSWORD missing,
+# SEED_DEMO_DATA enabled, or a half-configured Turso URL/token pair). This
+# also covers the WSGI/Vercel path, where importing this module IS the
+# application's startup.
+Config.validate_config()
+
 # CSRF protection (VULN-002 fix): every state-changing POST is rejected
 # unless it carries a per-session synchronizer token rendered into the form
 # as a hidden input. Flask-WTF's CSRFProtect validates the token against the

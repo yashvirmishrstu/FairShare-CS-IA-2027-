@@ -26,19 +26,23 @@ import sys
 
 
 def main():
-    # config.py deliberately has NO hardcoded SECRET_KEY fallback (deploy
-    # safety). Refusing to start here is the fail-closed behaviour: an
-    # operator who forgets the key gets a clear message instead of an app
-    # that signs sessions with a predictable default.
-    if not os.environ.get('SECRET_KEY'):
-        print("ERROR: SECRET_KEY environment variable is required.", file=sys.stderr)
-        print('Generate one with: python -c "import secrets; print(secrets.token_hex(32))"', file=sys.stderr)
+    # Run the shared startup validation FIRST so the operator gets one
+    # friendly message listing EVERY missing/unsafe setting (SECRET_KEY, and
+    # on Vercel ADMIN_PASSWORD / SEED_DEMO_DATA / the Turso pair) instead of
+    # a bare traceback. Importing main would run the same validator and fail
+    # closed anyway, but checking here lets serve.py print a clean error and
+    # exit 1 without one.
+    from config import Config
+    problems = Config.check_config()
+    if problems:
+        print("ERROR: FairShare cannot start -- configuration problems:", file=sys.stderr)
+        for problem in problems:
+            for line in problem.splitlines():
+                print(f"  {line}", file=sys.stderr)
+        print("Fix the problems above, then re-run.", file=sys.stderr)
         sys.exit(1)
 
-    # Import AFTER the secret check: importing main imports config, which
-    # fails closed at import time when SECRET_KEY is missing (VULN-001 fix).
-    # Checking first lets serve.py print its own friendly message instead of
-    # surfacing config.py's RuntimeError traceback.
+    # Import AFTER validation succeeds.
     from waitress import serve
     from main import app
 

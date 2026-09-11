@@ -721,10 +721,10 @@ function initAdminAnalytics() {
         new Chart(facilityChartElem, {
           type: 'bar',
           data: {
-            labels: labels.length ? labels : ['Gym', 'Tennis', 'Dining', 'Pool'],
+            labels: labels.length ? labels : [],
             datasets: [{
               label: 'Total Usage (Minutes)',
-              data: durations.length ? durations : [120, 90, 240, 60],
+              data: durations.length ? durations : [],
               backgroundColor: 'rgba(169, 0, 14, 0.75)',
               borderColor: '#121212',
               borderWidth: 2,
@@ -751,10 +751,10 @@ function initAdminAnalytics() {
         new Chart(peakChartElem, {
           type: 'line',
           data: {
-            labels: hours.length ? hours : ['09:00', '12:00', '15:00', '18:00', '21:00'],
+            labels: hours.length ? hours : [],
             datasets: [{
               label: 'Peak Check-Ins & Activity',
-              data: counts.length ? counts : [5, 14, 8, 22, 11],
+              data: counts.length ? counts : [],
               borderColor: '#2850ce',
               backgroundColor: 'rgba(40, 80, 206, 0.15)',
               borderWidth: 3,
@@ -782,9 +782,9 @@ function initAdminAnalytics() {
         new Chart(rewardChartElem, {
           type: 'doughnut',
           data: {
-            labels: labels.length ? labels : ['0% Band', '5% Band', '10% Band', '15% Band', '20% Band'],
+            labels: labels.length ? labels : [],
             datasets: [{
-              data: counts.length ? counts : [1, 2, 3, 1, 1],
+              data: counts.length ? counts : [],
               backgroundColor: ['#1c1b1b', '#2850ce', '#d2a600', '#755b00', '#a9000e'],
               borderColor: '#121212',
               borderWidth: 2

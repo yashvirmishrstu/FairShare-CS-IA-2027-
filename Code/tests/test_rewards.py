@@ -88,7 +88,7 @@ def test_guest_creation_and_spending():
     guest_res = GuestManager.create_guest_id(host_id, "David Miller")
     assert guest_res['guest_code'].startswith("GST-")
 
-    success = GuestManager.record_guest_spending(guest_res['guest_code'], "Tennis Shop", 150.00)
+    success = GuestManager.record_spending(guest_res['id'], "Tennis Shop", 150.00)
     assert success is True
 
     # Verify that guest spending is reflected in host member engagement calculation

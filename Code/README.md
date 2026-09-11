@@ -291,7 +291,7 @@ Rewards are computed by a **single batch pass** (`EngagementEngine.recalculate_a
 |---------|---------------|
 | **Password hashing** | Werkzeug `generate_password_hash` / `check_password_hash` — never plaintext |
 | **Session management** | HMAC-signed cookies via Flask; `session.clear()` before login prevents session fixation |
-| **Fail-closed SECRET_KEY** | No hardcoded fallback; the old publicly-committed key is rejected at import time |
+| **Fail-closed SECRET_KEY** | No hardcoded fallback; startup validation rejects a missing key or the old publicly-committed key |
 | **CSRF protection** | Flask-WTF CSRFProtect on every state-changing POST |
 | **Rate limiting** | Exponential-backoff lockout after 5 failed login attempts (DB-persisted, survives restarts) |
 | **SQL injection prevention** | Parameterised queries everywhere — no string interpolation |

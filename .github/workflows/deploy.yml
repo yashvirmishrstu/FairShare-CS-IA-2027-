@@ -150,6 +150,33 @@ jobs:
           vercel-args: "--prod"
           working-directory: ./Code        # Vercel project root = Code/ (where vercel.json lives)
 
+      # A crashed serverless function (FUNCTION_INVOCATION_FAILED) means the
+      # app never booted: Vercel serves its branded error page for EVERY route.
+      # A plain status check cannot distinguish that from an ordinary 500, so
+      # scan the response BODY for the crash marker and fail with a targeted
+      # message. This runs BEFORE the HTTP-200 smoke test so a crashed deploy
+      # fails fast with the actionable error instead of wasting retries.
+      - name: Fail on FUNCTION_INVOCATION_FAILED (crashed function)
+        run: |
+          url="${{ steps.deploy.outputs.preview-url }}"
+          [ -n "$url" ] || { echo "::error::Deploy produced no URL"; exit 1; }
+          for i in 1 2 3 4 5 6; do
+            body=$(curl -sL --max-time 20 "$url/login" || true)
+            if echo "$body" | grep -qi "FUNCTION_INVOCATION_FAILED"; then
+              echo "::error::FUNCTION_INVOCATION_FAILED on $url/login -- the serverless function crashed on boot. Check the Vercel function logs; the usual cause is a missing SECRET_KEY or ADMIN_PASSWORD environment variable (the app fails closed without them)."
+              exit 1
+            fi
+            # Empty body = curl could not reach the function yet (cold start);
+            # a real response -- crash page or not -- is always non-empty.
+            if [ -n "$body" ]; then
+              echo "No crash marker on $url/login (attempt $i)."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::No response from $url/login after retries"
+          exit 1
+
       # Quick guard: the live production app must answer HTTP 200 right away.
       - name: Smoke test the deployed app
         run: |

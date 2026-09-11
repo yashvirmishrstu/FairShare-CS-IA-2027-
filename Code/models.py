@@ -264,7 +264,7 @@ class EngagementEngine:
         loyalty_points = loyalty_months * settings['loyalty_weight']
 
         base_score = visit_points + spending_points + referral_points + facility_points + loyalty_points
-        tier_multiplier = 1.0  # tier system removed
+        tier_multiplier = 1.0  # tier multipliers disabled; kept in response for API compatibility
         score = base_score * tier_multiplier
 
         return {
@@ -761,26 +761,6 @@ class GuestManager:
         report['facility_sessions'] = snapshot.get('facility_sessions', [])
         report['summary'] = snapshot.get('summary', {})
         return report
-
-    @staticmethod
-    def record_guest_spending(guest_code, service_name, amount):
-        """Record spending by a guest using their guest ID code."""
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM guest_ids WHERE guest_code = ? AND status = 'active'", (guest_code,))
-        guest = cursor.fetchone()
-        
-        if not guest:
-            conn.close()
-            return False
-
-        cursor.execute('''
-            INSERT INTO guest_activities (guest_id, activity_type, service_name, transaction_value)
-            VALUES (?, 'purchase', ?, ?)
-        ''', (guest['id'], service_name, amount))
-        conn.commit()
-        conn.close()
-        return True
 
 
 class ReceiptManager:

@@ -1219,9 +1219,9 @@ footer {
   color: var(--on-secondary);
 }
 
-.auth-panel { animation: fadeIn 0.2s ease; }
+.auth-panel { animation: fadeInUp 0.2s ease; }
 
-@keyframes fadeIn {
+@keyframes fadeInUp {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }

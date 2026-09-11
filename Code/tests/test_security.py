@@ -39,30 +39,83 @@ def client(db):
     app.config['WTF_CSRF_ENABLED'] = old
 
 
-# ---- VULN-001: SECRET_KEY fail-closed ------------------------------------
+# ---- VULN-001: SECRET_KEY fail-closed startup validation ----------------
+# The check lives in Config.validate_config() (called at app startup), NOT at
+# `import config` time — so a subprocess here must invoke the validator
+# explicitly to prove it fails closed.
 
-def _run_config_import(env_overrides):
+def _run_config_validation(env_overrides):
     env = os.environ.copy()
+    # Strip every variable the tests/launchers set so each case below is
+    # fully self-contained (conftest.py sets SECRET_KEY/ADMIN_PASSWORD/
+    # SEED_DEMO_DATA for the rest of the suite).
+    for var in ("SECRET_KEY", "ADMIN_PASSWORD", "SEED_DEMO_DATA",
+                "VERCEL", "TURSO_URL", "TURSO_AUTH_TOKEN"):
+        env.pop(var, None)
     env.update(env_overrides)
     proc = subprocess.run(
-        [sys.executable, "-c", "import config"],
+        [sys.executable, "-c", "import config; config.Config.validate_config()"],
         capture_output=True, text=True, cwd=str(PROJECT_ROOT), env=env,
     )
     return proc.returncode, proc.stderr
 
 
 def test_secret_key_fails_closed_when_unset():
-    code, err = _run_config_import({"SECRET_KEY": ""})
-    assert code != 0, "config must refuse to import without SECRET_KEY"
+    code, err = _run_config_validation({"SECRET_KEY": ""})
+    assert code != 0, "startup validation must refuse to run without SECRET_KEY"
     assert "SECRET_KEY is not set" in err
 
 
 def test_secret_key_rejects_legacy_public_default():
-    code, err = _run_config_import(
+    code, err = _run_config_validation(
         {"SECRET_KEY": "fairshare_production_secret_key_2026"}
     )
     assert code != 0, "the legacy public default key must be rejected"
     assert "publicly-known default" in err
+
+
+def _vercel_env(**overrides):
+    env = {"SECRET_KEY": "fairshare-test-secret-key", "VERCEL": "1"}
+    env.update(overrides)
+    return env
+
+
+def test_vercel_requires_admin_password():
+    code, err = _run_config_validation(_vercel_env())
+    assert code != 0, "Vercel deployments must set ADMIN_PASSWORD"
+    assert "ADMIN_PASSWORD" in err
+
+
+def test_vercel_rejects_seed_demo_data():
+    code, err = _run_config_validation(
+        _vercel_env(ADMIN_PASSWORD="op-secret", SEED_DEMO_DATA="1")
+    )
+    assert code != 0, "SEED_DEMO_DATA must be rejected on Vercel"
+    assert "SEED_DEMO_DATA" in err
+
+
+def test_vercel_requires_turso_pair():
+    code, err = _run_config_validation(
+        _vercel_env(ADMIN_PASSWORD="op-secret", TURSO_URL="libsql://demo.turso.io")
+    )
+    assert code != 0, "TURSO_URL without TURSO_AUTH_TOKEN must be rejected on Vercel"
+    assert "TURSO_URL and TURSO_AUTH_TOKEN must be set together" in err
+
+
+def test_vercel_allows_complete_config():
+    code, err = _run_config_validation(
+        _vercel_env(ADMIN_PASSWORD="op-secret",
+                    TURSO_URL="libsql://demo.turso.io",
+                    TURSO_AUTH_TOKEN="secret-token")
+    )
+    assert code == 0, f"a fully configured Vercel env must pass, got: {err}"
+
+
+def test_local_env_ignores_vercel_only_rules():
+    # Locally, demo data and a missing ADMIN_PASSWORD are fine (tests and dev
+    # tools rely on them) — only SECRET_KEY is mandatory everywhere.
+    code, err = _run_config_validation({"SECRET_KEY": "local-key", "SEED_DEMO_DATA": "1"})
+    assert code == 0, f"a local env with demo data must pass, got: {err}"
 
 
 def test_secret_key_source_has_no_fallback_literal():

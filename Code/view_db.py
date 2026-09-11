@@ -5,7 +5,7 @@ import sqlite3
 import os
 
 def view_database():
-    # Direct path to database (bypassing config which requires SECRET_KEY)
+    # Direct path to database (avoids pulling in the app/startup validation)
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
     db_path = os.path.join(BASE_DIR, 'data', 'fairshare.db')
     print(f"Database: {db_path}\n")

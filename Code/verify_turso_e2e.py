@@ -12,7 +12,7 @@
      set TURSO_URL=ws://127.0.0.1:8081          (local sqld server, no token)
      set TURSO_URL=libsql://<db>-<org>.turso.io
      set TURSO_AUTH_TOKEN=<token>               (required for hosted Turso)
-     set SECRET_KEY=anything                    (config.py fails closed)
+     set SECRET_KEY=anything                    (startup validation fails closed)
      python verify_turso_e2e.py
 
  Local sqld (the exact server software Turso runs) can be started in WSL:
